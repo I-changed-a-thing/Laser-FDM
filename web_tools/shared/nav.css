@@ -1,0 +1,140 @@
+/* Shared Top Navigation Bar for Laser 3D Suite */
+.laser-suite-nav {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    flex-shrink: 0;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 48px;
+    padding: 0 24px;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #f8fafc;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.laser-suite-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: #f8fafc;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+}
+
+.laser-suite-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #00f0ff, #3b82f6);
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+    position: relative;
+    flex-shrink: 0;
+}
+
+.laser-suite-icon::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #ffffff;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #00f0ff;
+}
+
+.laser-suite-links {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.laser-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: #94a3b8;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+    background: transparent;
+    cursor: pointer;
+}
+
+.laser-nav-btn:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.laser-nav-btn.active {
+    color: #ffffff;
+    background: #2563eb;
+    border-color: #3b82f6;
+    box-shadow: 0 0 14px rgba(37, 99, 235, 0.5);
+    font-weight: 600;
+}
+
+.laser-nav-btn .icon {
+    font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+    .laser-suite-nav {
+        padding: 8px 12px;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .laser-suite-links {
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .laser-nav-btn {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+    }
+}
+
+.laser-nav-disclaimer-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 6px;
+}
+.laser-nav-disclaimer-btn:hover {
+    background: rgba(245, 158, 11, 0.22);
+    color: #fef3c7;
+    border-color: #fbbf24;
+}
+
+/* Layout guard: ensure nav sits on top of page content and does not flex horizontally with page containers */
+body {
+    flex-direction: column !important;
+}

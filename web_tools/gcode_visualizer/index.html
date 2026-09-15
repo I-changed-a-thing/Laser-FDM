@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laser 3D G-Code Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Local Three.js & OrbitControls (Self-contained offline bundle) -->
+    <script src="vendor/three.min.js"></script>
+    <script src="vendor/OrbitControls.js"></script>
+    <!-- Pre-bundled sample G-code for instant zero-config launch -->
+    <script src="../simulator_3d/js/sample-gcode.js"></script>
+<link rel="stylesheet" href="../shared/nav.css">
+<link rel="stylesheet" href="../shared/disclaimer.css">
+<script src="../shared/disclaimer.js"></script>
+<script src="../shared/calibration-config.js"></script>
+</head>
+<body>
+
+    <!-- Shared Top Navbar -->
+    <nav class="laser-suite-nav">
+        <a href="../../index.html" class="laser-suite-brand">
+            <span class="laser-suite-icon"></span>
+            <span>Laser 3D Suite</span>
+        </a>
+        <div class="laser-suite-links">
+            <a href="../../index.html" class="laser-nav-btn">Suite Hub</a>
+            <a href="../configurator/index.html" class="laser-nav-btn">Configurator</a>
+            <a href="index.html" class="laser-nav-btn active">G-Code Visualizer</a>
+            <a href="../simulator_3d/index.html" class="laser-nav-btn">3D Simulator</a>
+            <a href="../calibration/index.html" class="laser-nav-btn">Offset Calibration</a>
+            <button class="laser-nav-disclaimer-btn" onclick="window.showLaserDisclaimer(true)">Disclaimer</button>
+        </div>
+    </nav>
+
+    <div id="canvas-container"></div>
+
+    <!-- Drop Zone Overlay -->
+    <div id="drop-zone" class="overlay">
+        <div id="drop-content" class="drop-content">
+            <h1>Laser G-Code Visualizer</h1>
+            <p>Drag and drop your post-processed <code>.gcode</code> file here</p>
+            <input type="file" id="file-input" accept=".gcode" style="display: none;">
+            <div style="display: flex; gap: 12px; justify-content: center; margin-top: 15px; flex-wrap: wrap;">
+                <button type="button" onclick="document.getElementById('file-input').click()">Select G-Code File</button>
+                <button id="btn-load-sample" type="button" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--panel-border);">Load Sample Test File</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading" class="overlay hidden">
+        <div class="drop-content">
+            <h2>Processing G-Code...</h2>
+            <p>Parsing layers, laser moves, and wobble passes.</p>
+        </div>
+    </div>
+
+    <!-- UI Overlay Container -->
+    <div id="ui-container" class="hidden">
+        <div class="sidebar glass-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>Laser Visualizer</h2>
+                <button id="reset-btn" style="background: rgba(255,255,255,0.1); border: 1px solid var(--panel-border); color: var(--text); padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;">Load New</button>
+            </div>
+
+            <!-- Stats -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 20px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; text-align: center;">
+                <div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Layers</div>
+                    <div id="stat-layers" style="font-size: 16px; font-weight: 700; color: #fff;">0</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Chunks</div>
+                    <div id="stat-chunks" style="font-size: 16px; font-weight: 700; color: #3742fa;">0</div>
+                </div>
+                <div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Passes</div>
+                    <div id="stat-passes" style="font-size: 16px; font-weight: 700; color: #2ed573;">0</div>
+                </div>
+            </div>
+
+            <!-- Layer Filter -->
+            <h3>Layer Range</h3>
+            <div class="slider-container">
+                <label><span>Min Layer</span><span id="min-layer-val">0</span></label>
+                <input type="range" id="min-layer" min="0" max="100" value="0">
+            </div>
+            <div class="slider-container">
+                <label><span>Max Layer</span><span id="max-layer-val">100</span></label>
+                <input type="range" id="max-layer" min="0" max="100" value="100">
+            </div>
+
+            <!-- Chunk Inspector -->
+            <h3>Laser Chunk Inspector</h3>
+            <div style="margin-bottom: 10px;">
+                <select id="chunk-select" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 6px; border-radius: 6px;">
+                    <option value="-1">All Chunks</option>
+                </select>
+            </div>
+            <div class="slider-container">
+                <label><span>Chunk Slider</span><span id="chunk-idx-val">All</span></label>
+                <input type="range" id="chunk-slider" min="-1" max="10" value="-1">
+                <div id="chunk-info" style="font-size: 12px; color: var(--text-muted); margin-top: 5px; line-height: 1.4;">Showing all chunks.</div>
+            </div>
+
+            <!-- Visibility Controls -->
+            <h3>Feature Visibility</h3>
+            <label class="toggle"><input type="checkbox" id="show-fdm" checked> <span style="color: #a4b0be; margin-left: 8px;">FDM Print Lines</span></label>
+            <label class="toggle"><input type="checkbox" id="show-travel"> <span style="color: #4b6584; margin-left: 8px;">Travel Moves (G0)</span></label>
+            <label class="toggle"><input type="checkbox" id="show-purge" checked> <span style="color: #9b59b6; margin-left: 8px;">Mid-Air Purge</span></label>
+            <label class="toggle"><input type="checkbox" id="show-wall-smooth" checked> <span style="color: #ff4757; margin-left: 8px;">Wall Smoothing</span></label>
+            <label class="toggle"><input type="checkbox" id="show-deep-wall" checked> <span style="color: #ff6b81; margin-left: 8px;">Deep Wall Passes</span></label>
+            <label class="toggle"><input type="checkbox" id="show-top-smooth" checked> <span style="color: #2ed573; margin-left: 8px;">Top Surface Smoothing</span></label>
+            <label class="toggle"><input type="checkbox" id="show-anneal" checked> <span style="color: #eccc68; margin-left: 8px;">Annealing Raster</span></label>
+            <label class="toggle"><input type="checkbox" id="show-wobble" checked> <span style="color: #ff7f50; margin-left: 8px;">Z-Wobble Passes</span></label>
+            <label class="toggle"><input type="checkbox" id="show-connectivity" checked> <span style="color: #7bed9f; margin-left: 8px;">Connectivity Passes</span></label>
+            <label class="toggle"><input type="checkbox" id="show-preheat" checked> <span style="color: #f39c12; margin-left: 8px;">Preheat Passes</span></label>
+
+            <!-- Pin Filters -->
+            <h3>Filter By Laser Pin</h3>
+            <div style="display: flex; gap: 12px; margin-bottom: 15px;">
+                <label class="toggle"><input type="checkbox" id="show-pin-1" checked> <span style="color: #ff4757; margin-left: 6px;">Pin 1 (X+)</span></label>
+                <label class="toggle"><input type="checkbox" id="show-pin-2" checked> <span style="color: #2ed573; margin-left: 6px;">Pin 2 (X-)</span></label>
+                <label class="toggle"><input type="checkbox" id="show-pin-3" checked> <span style="color: #3742fa; margin-left: 6px;">Pin 3 (Top)</span></label>
+            </div>
+
+            <!-- Physical Offsets & Reverse Wobble -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Physical Laser Offsets</h3>
+                <a href="../calibration/index.html" target="_blank" style="font-size: 11px; color: #38bdf8; text-decoration: none; font-weight: 600;">Calibrate ↗</a>
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Wall Level Preset</label>
+                <select id="wall-level" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 6px; border-radius: 6px;">
+                    <option value="custom">Custom</option>
+                    <option value="0">Level 0 (Z=2.0 mm)</option>
+                    <option value="1">Level 1 (Z=5.0 mm)</option>
+                    <option value="2" selected>Level 2 (Z=10.0 mm)</option>
+                    <option value="3">Level 3 (Z=15.0 mm)</option>
+                    <option value="4">Level 4 (Z=20.0 mm)</option>
+                </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                <div>
+                    <label style="font-size: 11px; color: #ff4757;">Laser 1 X+ (mm)</label>
+                    <input type="number" id="l1-x" value="0.0" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #ff4757;">Laser 1 Z (mm)</label>
+                    <input type="number" id="l1-z" value="10.0" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #2ed573;">Laser 2 X- (mm)</label>
+                    <input type="number" id="l2-x" value="0.0" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #2ed573;">Laser 2 Z (mm)</label>
+                    <input type="number" id="l2-z" value="10.0" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #3742fa;">Laser 3 X (mm)</label>
+                    <input type="number" id="l3-x" value="34.0" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #3742fa;">Laser 3 Y (mm)</label>
+                    <input type="number" id="l3-y" value="72.4" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #3742fa;">Laser 3 Z (mm)</label>
+                    <input type="number" id="l3-z" value="0.0" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #3742fa;">Top Z-Hop (mm)</label>
+                    <input type="number" id="top-z-hop-val" value="0.5" step="0.1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--panel-border); color: #fff; padding: 4px 6px; border-radius: 4px;">
+                </div>
+            </div>
+            
+            <input type="hidden" id="l1-y" value="0.0">
+            <input type="hidden" id="l2-y" value="0.0">
+
+            <label class="toggle" style="margin-top: 10px;">
+                <input type="checkbox" id="project-wobble" checked>
+                <span style="font-weight: 600; color: #ff7f50; margin-left: 8px;">Reverse Math: Project Wobble to Wall</span>
+            </label>
+            <label class="toggle">
+                <input type="checkbox" id="reverse-z-hop">
+                <span style="font-weight: 600; color: #3742fa; margin-left: 8px;">Reverse Top Surface Z-Hop</span>
+            </label>
+
+            <!-- Color Modes -->
+            <h3>Color Coding</h3>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
+                <label class="toggle"><input type="radio" name="colorMode" value="pin" checked> <span style="margin-left: 8px;">By Pass Type</span></label>
+                <label class="toggle"><input type="radio" name="colorMode" value="laser_pin"> <span style="margin-left: 8px;">By Laser Pin (1, 2, 3)</span></label>
+                <label class="toggle"><input type="radio" name="colorMode" value="power"> <span style="margin-left: 8px;">By Laser Power Heatmap</span></label>
+                <label class="toggle"><input type="radio" name="colorMode" value="speed"> <span style="margin-left: 8px;">By Movement Speed</span></label>
+                <label class="toggle"><input type="radio" name="colorMode" value="sequence"> <span style="margin-left: 8px;">By Execution Sequence</span></label>
+            </div>
+
+            <!-- Heatmap Legend -->
+            <div id="color-legend" class="hidden" style="margin-bottom: 20px;">
+                <div style="height: 12px; border-radius: 6px; background: linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000); margin-bottom: 4px;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+                    <span id="legend-min">0</span>
+                    <span id="legend-max">1</span>
+                </div>
+            </div>
+
+            <!-- Settings Summary Modal Button -->
+            <button id="toggle-settings-btn" style="width: 100%; background: rgba(255,255,255,0.08); border: 1px solid var(--panel-border); color: #fff; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500;">View G-Code Slicer Settings</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="overlay hidden">
+        <div class="drop-content glass-panel" style="max-width: 600px; max-height: 80vh; overflow-y: auto; text-align: left; padding: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>G-Code Settings</h2>
+                <button id="close-settings-btn" style="background: transparent; border: none; font-size: 24px; color: #fff; cursor: pointer;">&times;</button>
+            </div>
+            <div id="settings-table-container"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -11,15 +11,17 @@ The software stack integrates laser processing directly into a standard FDM 3D p
 The architecture consists of four primary components:
 1. **Web Generator UI (`web_generator/index.html`)**: A frontend application that acts as the control panel. Users define their parameters visually, and the UI generates a long, complex command-line string.
 2. **OrcaSlicer Post-Processing**: The generated command-line string is pasted into OrcaSlicer's post-processing settings. When a model is sliced, OrcaSlicer automatically runs the Python scripts on the output `.gcode` file.
-3. **Python Processing Scripts**: The scripts parse the G-code line-by-line, calculate vectors, cluster geometric shapes, and generate new G-code commands (e.g., `SET_PIN PIN=laser_pwm VALUE=...`) based on the requested features (annealing, smoothing, riveting, etc.).
+3. **Python Processing Scripts**: The scripts parse the G-code line-by-line, calculate vectors, cluster geometric shapes, and generate new G-code commands (e.g., `SET_PIN PIN=laser_pwm VALUE=...`) based on the requested features (annealing, smoothing, etc.).
 4. **Klipper Firmware (`printer.cfg`)**: The printer's firmware receives the modified G-code. Custom macros and `[output_pin]` configurations execute the laser commands synchronously with the toolhead movements.
 
 ---
 
+> ⚠️ **DEVELOPMENT STATUS**: Standard horizontal wall smoothing is the stable production method. All advanced multi-layer wall modes (Deep, Wobble, Voxel Wobble, Voxel Raycast) are in **ALPHA** and must be visually verified before printing on physical hardware.
+
 ## 2. Core Post-Processing Script
 ### `orcaslicer_laser_advanced.py`
 
-This is the primary script responsible for analyzing the G-code and injecting laser commands for preheating, annealing, smoothing, wall remelting, and riveting. It heavily utilizes 2D vector mathematics and spatial clustering.
+This is the primary script responsible for analyzing the G-code and injecting laser commands for preheating, annealing, smoothing, wall remelting. It heavily utilizes 2D vector mathematics and spatial clustering.
 
 #### Geometric & Mathematical Helpers
 - **`get_val(line, char)`**: Parses a G-code line (e.g., `G1 X100 Y50 E2 F3000`) and extracts the numeric value following a specific character (e.g., `X`). Returns `None` if missing.
@@ -33,7 +35,6 @@ This is the primary script responsible for analyzing the G-code and injecting la
 #### Raster & Grid Generation
 - **`build_boolean_grid(points, res, max_dist)`**: Creates a 2D boolean occupation grid representing solid areas vs. empty space, used to ensure the laser only fires over the actual printed part and not thin air.
 - **`generate_laser_grid(...)`**: The core rasterization engine. It takes a bounding box, an angle, and physical parameters to generate a dense zig-zag pattern of G-code moves across a surface. It handles clipping against the boolean grid, alternating directions, and inserting precise `SET_PIN` commands.
-- **`generate_laser_rivets(...)`**: Calculates a grid of points over a surface and generates stationary laser pulses ("dwells") at high power to melt deep into the Z-axis, anchoring layers together.
 - **`generate_laser_connectivity(...)`**: Similar to the laser grid, but optimized for generating distinct conductive or structural traces.
 
 #### Wall & Path Smoothing
@@ -41,7 +42,9 @@ This is the primary script responsible for analyzing the G-code and injecting la
 - **`build_paths_from_segments(segments)`**: Takes chaotic, disconnected line segments and stitches them into continuous, ordered polygons.
 - **`split_corners_in_paths(paths, corner_dist, power_scaler, ...)`**: Analyzes paths for sharp corners/angles and dynamically reduces laser power at the apex to prevent overheating and melting the corner away.
 - **`generate_wall_smooth_passes(...)`**: Processes outer wall polygons. It calculates perpendicular offsets to position the side-mounted lasers exactly at the focal distance, and handles Z-axis interlacing, multi-height divisions, and temperature drops.
-- **`generate_wobble_passes(...)` & `generate_deep_wobble_passes(...)`**: Generates a high-frequency sine-wave or zig-zag oscillation path alongside the wall to increase the melt zone width without increasing laser power.
+- **`generate_voxel_wobble_passes(...)` & `generate_voxel_raycast_wall_passes(...)`**: Modern slope-adaptive 3D wall smoothing engines. They compute perpendicular offsets, analyze layer-to-layer slope vectors, and apply dynamic apex displacement to follow outer perimeters smoothly.
+- **`check_3d_sloped_occlusion(...)`**: Raycasting function that uses the physical diode laser elevation angle (e.g. 22°) to verify line-of-sight and prevent firing through intervening geometry.
+- **`generate_wobble_passes(...)`**: Generates high-frequency sinusoidal oscillations along the wall path to broaden the laser melt pool without excessive heat concentration.
 
 #### Parsing & Extraction
 - **`will_laser_resume_shortly(...)`**: A look-ahead function that checks upcoming G-code lines to see if the laser will be needed again immediately, preventing unnecessary on/off cycling.
@@ -50,23 +53,7 @@ This is the primary script responsible for analyzing the G-code and injecting la
 
 ---
 
-## 3. Calibration & Tuning
-### `process_matrix.py`
-
-This script is used exclusively for generating 2D matrix calibration prints (e.g., varying Power on the Y-axis and Speed on the X-axis) to find the optimal settings for a specific material.
-
-#### Functions
-- **`get_val(line, axis)`**: Standard G-code parsing helper.
-- **`split_segment_by_columns(x1, y1, x2, y2, long_axis, min_val)`**: Slices a continuous wall extrusion into distinct columns to apply different power settings.
-- **`get_interpolated(args, var_name, row, col, max_rows, max_cols)`**: The core mathematical function that calculates the exact value (e.g., speed, power) for a specific square in the matrix based on its Row and Column index.
-- **`get_matrix_values(...)`**: A wrapper that retrieves all interpolated variables for a specific grid cell simultaneously.
-- **`is_point_in_path(...)`**: Polygon bounding check.
-- **`generate_matrix_wall(...)`**: Reconstructs the outer walls of the calibration matrix and assigns the correct laser power to each segment based on which matrix column the wall segment resides in.
-- **`process_calibration(file_path, mode, args)`**: The main execution loop. It intercepts the standard infill or top surface of the calibration model and replaces it entirely with dynamically generated laser matrices.
-
----
-
-## 4. Mechanical & Infill Manipulation
+## 3. Mechanical & Infill Manipulation
 
 ### `orcaslicer_bricklayer_infill.py`
 This script alters internal infill geometry to create staggered, interlocking "brick" patterns that improve structural integrity.
@@ -81,10 +68,15 @@ This script introduces vertical Z-axis oscillations during infill printing to cr
 
 ---
 
-## 5. Web Ecosystem
+## 4. Web Ecosystem
 
-### Web Generator (`web_generator/index.html`)
+### Unified Web Suite (`index.html`)
+The release features a unified, responsive Web Suite that runs entirely offline with zero server requirements. A master Hub connects four specialized subpages with persistent cross-navigation:
+1. **Configurator & Calibration (`web_tools/configurator/`)**: Generates OrcaSlicer CLI strings, includes JSON preset export/import, Virtual PCB parameters, experimental slicing paths, and Matrix calibration.
+2. **G-Code Visualizer (`web_tools/gcode_visualizer/`)**: Fast 2D/3D toolpath inspector with support for hardware Calibration Levels (0 to 4), power heatmaps, and chunk analysis.
+3. **3D Toolhead Simulator (`web_tools/simulator_3d/`)**: Photorealistic WebGL simulation featuring the authentic 3D CAD toolhead assembly, cooling fans, golden nozzle, and macro melt-zone camera.
+4. **Offset Calibration (`web_tools/calibration/`)**: Step-by-step 10mm cube paper calibration to align angled laser diodes and generate Klipper test macros.
 The frontend is built using standard HTML/CSS/JS. It relies on a JavaScript function `generateCommand()` that triggers on any input change. This function dynamically reads all DOM elements, checks for active toggles, and concatenates a formatted string of Python CLI arguments. The UI leverages `localStorage` to save settings between sessions, and implements `JSON.parse`/`JSON.stringify` to export/import complete material preset profiles to the local disk.
 
-### 3D Visualizer (`laser_visualizer/index.html`)
+### 3D Visualizer (`web_tools/gcode_visualizer/index.html`)
 The visualizer uses **Three.js** to render G-code paths in a web browser. It parses standard `G1` moves into lines. More importantly, it specifically searches for the injected `SET_PIN PIN=laser_pwm...` commands generated by the Python scripts. When it detects a laser activation, it changes the color and thickness of the rendered path, interpolating colors from blue (low power) to red (high power), allowing users to visually verify the laser paths and calibration sweeps before running the print.

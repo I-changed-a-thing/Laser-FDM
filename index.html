@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laser 3D Printer Suite — Main Portal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="web_tools/shared/nav.css">
+    <link rel="stylesheet" href="web_tools/shared/disclaimer.css">
+    <script src="web_tools/shared/disclaimer.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-dark: #090d16;
+            --card-bg: rgba(18, 26, 43, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --accent-amber: #f59e0b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.12), transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.12), transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.06), transparent 50%);
+            background-attachment: fixed;
+            width: 100%;
+        }
+
+        .hub-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 50px 24px 60px;
+            flex: 1;
+        }
+
+        .hero-section {
+            text-align: center;
+            margin-bottom: 45px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #60a5fa;
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .hero-badge .pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #60a5fa;
+            box-shadow: 0 0 10px #60a5fa;
+            animation: pulse-dot 1.8s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0% { opacity: 0.4; transform: scale(0.9); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0.4; transform: scale(0.9); }
+        }
+
+        .hero-title {
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #ffffff 30%, #93c5fd 70%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+
+        .hero-desc {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            max-width: 720px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* Persistent Risk Disclaimer Card */
+        .risk-banner {
+            background: rgba(239, 68, 68, 0.09);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 16px;
+            padding: 20px 24px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            margin-bottom: 40px;
+        }
+
+        .risk-banner .icon {
+            font-size: 26px;
+            line-height: 1;
+            color: #f87171;
+            flex-shrink: 0;
+        }
+
+        .risk-banner h4 {
+            color: #f87171;
+            font-size: 1rem;
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .risk-banner p {
+            color: #fca5a5;
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+
+        /* 4-Card Grid */
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 24px;
+            margin-bottom: 50px;
+        }
+
+        .tool-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 34px 28px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(96, 165, 250, 0.4);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45), 0 0 25px rgba(59, 130, 246, 0.15);
+        }
+
+        .tool-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--card-accent, #3b82f6), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .tool-card:hover::before {
+            opacity: 1;
+        }
+
+        .card-icon-box {
+            width: 58px;
+            height: 58px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-bottom: 22px;
+            background: var(--icon-bg, rgba(59, 130, 246, 0.12));
+            border: 1px solid var(--icon-border, rgba(59, 130, 246, 0.25));
+        }
+
+        .card-title {
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-desc {
+            font-size: 1rem;
+            color: var(--text-muted);
+            line-height: 1.65;
+            margin-bottom: 28px;
+            flex: 1;
+        }
+
+        .launch-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 13px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #ffffff;
+            background: var(--btn-bg, #2563eb);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .tool-card:hover .launch-btn {
+            background: var(--btn-hover, #1d4ed8);
+            box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 24px;
+            color: #64748b;
+            font-size: 0.85rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            width: 100%;
+        }
+
+        .footer a {
+            color: #94a3b8;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            color: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Shared Top Navbar -->
+    <nav class="laser-suite-nav">
+        <a href="index.html" class="laser-suite-brand">
+            <span class="laser-suite-icon"></span>
+            <span>Laser 3D Suite</span>
+        </a>
+        <div class="laser-suite-links">
+            <a href="index.html" class="laser-nav-btn active">Suite Hub</a>
+            <a href="web_tools/configurator/index.html" class="laser-nav-btn">Configurator</a>
+            <a href="web_tools/gcode_visualizer/index.html" class="laser-nav-btn">G-Code Visualizer</a>
+            <a href="web_tools/simulator_3d/index.html" class="laser-nav-btn">3D Simulator</a>
+            <a href="web_tools/calibration/index.html" class="laser-nav-btn">Offset Calibration</a>
+            <button class="laser-nav-disclaimer-btn" onclick="window.showLaserDisclaimer(true)">Disclaimer</button>
+        </div>
+    </nav>
+
+    <div class="hub-container">
+        <!-- Hero Header -->
+        <div class="hero-section">
+            <div class="hero-badge">
+                <span class="pulse"></span>
+                <span>Laser-Assisted FDM Ecosystem</span>
+            </div>
+            <h1 class="hero-title">Laser 3D Printer Suite</h1>
+            <p class="hero-desc">
+                Integrated web applications for configuring post-processing commands, verifying output G-code, and simulating laser smoothing toolpaths in 3D.
+            </p>
+        </div>
+
+        <!-- Risk & Wall Smoothing Bug Warning Banner -->
+        <div class="risk-banner">
+            <span class="icon">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="#f87171" style="vertical-align: middle;"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+            </span>
+            <div>
+                <h4>Experimental Project • At Your Own Risk</h4>
+                <p>
+                    This software and hardware stack is 100% experimental. All wall smoothing modes can contain bugs. Specifically, <strong>Deep Mode</strong> and <strong>all Wobble modes</strong> still have known bugs on complicated parts, sharp angles, and non-manifold meshes. Always inspect your toolpaths in the Visualizers before running prints!
+                </p>
+            </div>
+        </div>
+
+        <!-- 3 Interactive Tool Cards -->
+        <div class="tools-grid">
+
+            <!-- Card 1: Configurator -->
+            <a href="web_tools/configurator/index.html" class="tool-card" style="--card-accent: #3b82f6; --icon-bg: rgba(59, 130, 246, 0.12); --icon-border: rgba(59, 130, 246, 0.3); --btn-bg: #2563eb; --btn-hover: #1d4ed8;">
+                <div class="card-icon-box">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--card-accent, #3b82f6)"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                </div>
+                <h3 class="card-title">
+                    <span>Slicer Configurator</span>
+                    <span style="font-size: 1rem; color: #60a5fa;">→</span>
+                </h3>
+                <p class="card-desc">
+                    A tool to help configure your post-processing commands.
+                </p>
+                <div class="launch-btn">Open Slicer Configurator</div>
+            </a>
+
+            <!-- Card 2: G-Code Visualizer -->
+            <a href="web_tools/gcode_visualizer/index.html" class="tool-card" style="--card-accent: #06b6d4; --icon-bg: rgba(6, 182, 212, 0.12); --icon-border: rgba(6, 182, 212, 0.3); --btn-bg: #0891b2; --btn-hover: #0e7490;">
+                <div class="card-icon-box">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--card-accent, #06b6d4)"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                </div>
+                <h3 class="card-title">
+                    <span>G-Code Visualizer</span>
+                    <span style="font-size: 1rem; color: #22d3ee;">→</span>
+                </h3>
+                <p class="card-desc">
+                    Used to check if the output G-code looks fine as expected.
+                </p>
+                <div class="launch-btn">Launch G-Code Visualizer</div>
+            </a>
+
+            <!-- Card 3: 3D Simulator -->
+            <a href="web_tools/simulator_3d/index.html" class="tool-card" style="--card-accent: #8b5cf6; --icon-bg: rgba(139, 92, 246, 0.12); --icon-border: rgba(139, 92, 246, 0.3); --btn-bg: #7c3aed; --btn-hover: #6d28d9;">
+                <div class="card-icon-box">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--card-accent, #8b5cf6)"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                </div>
+                <h3 class="card-title">
+                    <span>3D Toolpath Simulator</span>
+                    <span style="font-size: 1rem; color: #c084fc;">→</span>
+                </h3>
+                <p class="card-desc">
+                    Simulates the smoothed zones to get more insights, find errors, and gain a better understanding of the process.
+                </p>
+                <div class="launch-btn">Launch 3D Simulator</div>
+            </a>
+
+            <!-- Card 4: Offset Calibration -->
+            <a href="web_tools/calibration/index.html" class="tool-card" style="--card-accent: #10b981; --icon-bg: rgba(16, 185, 129, 0.12); --icon-border: rgba(16, 185, 129, 0.3); --btn-bg: #059669; --btn-hover: #047857;">
+                <div class="card-icon-box">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--card-accent, #10b981)"><path d="M12 2a1 1 0 0 1 1 1v1.055A8.002 8.002 0 0 1 20.945 11H22a1 1 0 1 1 0 2h-1.055A8.002 8.002 0 0 1 13 20.945V22a1 1 0 1 1-2 0v-1.055A8.002 8.002 0 0 1 3.055 13H2a1 1 0 1 1 0-2h1.055A8.002 8.002 0 0 1 11 4.055V3a1 1 0 0 1 1-1zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+                </div>
+                <h3 class="card-title">
+                    <span>Offset Calibration</span>
+                    <span style="font-size: 1rem; color: #34d399;">→</span>
+                </h3>
+                <p class="card-desc">
+                    Step-by-step 10mm cube paper calibration to align angled laser diodes and generate Klipper test macros.
+                </p>
+                <div class="launch-btn">Open Calibration Tool</div>
+            </a>
+
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>Laser 3D Printer Suite • Complete Local Offline Support • <a href="User_Guide.md" target="_blank">User Guide</a> • <a href="Technical_Documentation.md" target="_blank">Technical Documentation</a></p>
+    </footer>
+
+</body>
+</html>

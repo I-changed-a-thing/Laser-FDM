@@ -1,4 +1,5 @@
 import sys
+import traceback
 import re
 import os
 import math
@@ -25,7 +26,7 @@ import math
 #     preheat the previous layer. Power scales with feedrate.
 # ═════════════════════════════════════════════════════════════════════
 PREHEAT_ENABLED  = False
-PREHEAT_POWER    = 0.40    # PWM at REF_SPEED (0.0–1.0)
+PREHEAT_POWER    = 0.15    # PWM at REF_SPEED (0.0–1.0)
 REF_SPEED        = 50.0    # Speed (mm/s) at which PREHEAT_POWER is calibrated
 MIN_LASER_POWER  = 0.065    # Hardware floor: laser won't fire below this PWM
 MIN_LAYER        = 3       # First layer to activate any laser feature (0-indexed)
@@ -82,6 +83,8 @@ SMOOTH_MIN_AREA  = 1.0     # mm² — skip smoothing on tiny top surfaces
 SMOOTH_PASSES    = 2       # Number of smoothing passes over the top surface
 SMOOTH_ALTERNATE = True    # Alternate direction for each consecutive pass
 SMOOTH_ANGLE     = 0.0     # Base grid angle
+GLOBAL_SMOOTH_ENABLED = False     # Global 2D top surface smoothing
+GLOBAL_SMOOTH_LAYER   = None      # Specific layer index (0-indexed) to run global smoothing (None = last layer of print)
 
 SMOOTH_ENABLE_AREA_BOOST = False # Enable dynamic power scaling based on surface area
 SMOOTH_AREA_BOOST = 0.60   # Max power multiplier (0.60 = +60%) for large areas
@@ -119,10 +122,13 @@ WALL_PASS2_POWER_MINUS   = 0.10
 WALL_PASS2_REVERSE_DIRECTION = False
 WALL_PASS2_WOBBLE_REVERSE    = False
 WALL_WOBBLE_PROJECTION_FACTOR = 1.0
-WALL_SMOOTH_POWER_X_PLUS  = 0.20    # PWM for the right side (X+) laser
-WALL_SMOOTH_POWER_X_MINUS = 0.20    # PWM for the left side (X-) laser
-WALL_SMOOTH_OVERHANG_POWER_X_PLUS = 0.20
-WALL_SMOOTH_OVERHANG_POWER_X_MINUS = 0.20
+WALL_WOBBLE_X_SCALE      = 1.0
+WALL_MIN_SPEED           = 5.0
+WALL_MAX_SPEED           = 120.0
+WALL_SMOOTH_POWER_X_PLUS  = 0.08    # PWM for the right side (X+) laser (default: 0.08)
+WALL_SMOOTH_POWER_X_MINUS = 0.08    # PWM for the left side (X-) laser (default: 0.08)
+WALL_SMOOTH_OVERHANG_POWER_X_PLUS = 0.08
+WALL_SMOOTH_OVERHANG_POWER_X_MINUS = 0.08
 WALL_SMOOTH_SPEED         = 20.0    # mm/s
 WALL_SMOOTH_FREQ          = 1       # Run every N layers
 WALL_SMOOTH_PASSES        = 1       # Number of passes per wall
@@ -140,15 +146,18 @@ WALL_MAX_LAYER_SAFETY    = 0      # Layers to leave unsmoothed at the very top o
 
 # Added for Laser Offset Level
 WALL_OFFSET_LEVEL        = 0
-WALL_Z_OFFSET            = 2.8
-WALL_X_PLUS_OFFSET       = 5.0
-WALL_X_MINUS_OFFSET      = -5.5
+WALL_Z_OFFSET            = 2.0
+WALL_X_PLUS_OFFSET       = None
+WALL_X_MINUS_OFFSET      = None
 DEEP_MODE_WARNING_SHOWN  = False
 WALL_DISABLE_OVERHANG    = False
+WALL_DEEP_DELAY_PASSES    = False
 
 WALL_WOBBLE_ENABLED      = False
 WALL_WOBBLE_SEAM_ONLY    = False
 WALL_WOBBLE_PULL_CONTINUOUS = False
+WALL_WOBBLE_ADAPTIVE_SLOPE = False
+WALL_WOBBLE_SMART_CHUNKING = False
 
 WALL_DEEP_WOBBLE_LAYERS       = 4
 WALL_DEEP_WOBBLE_OVERLAP      = 1
@@ -173,28 +182,15 @@ WALL_RETRACT             = 5.0   # mm to retract at start of each wall smooth bl
 WALL_MAX_RETRACT         = 8.0   # mm max total retraction during a wall smooth block (cap for do_extra_retract)
 WALL_STANDBY_TEMP_DROP   = 0.0   # How many degrees to drop nozzle temp during deep sweeps (0 = disabled)
 CURRENT_PRINT_TEMP       = 220.0 # Track the current print temperature
+
+# Voxel Raycast Wall Smoother Configuration
+WALL_LASER_THETA           = 22.0  # Laser beam elevation angle in degrees
+WALL_VOXEL_SPACING         = 0.2   # Stroke spacing along perimeter in mm
+WALL_HANDOVER_OVERSHOOT    = 1.0   # Tangential overshoot at laser handover boundaries in mm
+WALL_THERMAL_POWER_DROP    = 0.5   # Power reduction factor at same-laser acute corners
+
 # ═════════════════════════════════════════════════════════════════════
-#  5. RIVETING CONFIGURATION
-#     Pulses the laser at high power over a grid to melt a "plug"
-#     that penetrates multiple layers deep for Z-axis anchoring.
-# ═════════════════════════════════════════════════════════════════════
-RIVET_ENABLED   = False
-RIVET_POWER     = 0.25    # PWM for deep penetration (low power, long dwell)
-RIVET_TIME      = 2000    # Dwell time (ms) at each rivet point
-RIVET_SPACING   = 3.0     # mm between rivets
-RIVET_Z_HOP     = 0.50    # mm hop to prevent nozzle collision while moving
-RIVET_FREQ      = 4       # Run every N layers
-RIVET_MIN_LAYER = 5       # Skip early layers
-RIVET_MARGIN    = 1.5     # mm inward shrink from bounding box
-RIVET_MIN_AREA  = 2.0     # mm² minimum area to rivet
-RIVET_WOBBLE_RADIUS = 0.0 # mm wobble radius for continuous mode
-RIVET_WOBBLE_TURNS = 1    # number of revolutions to make during dwell
-RIVET_WOBBLE_MAX_SPEED = 250.0 # max mm/s speed for wobble motion
-RIVET_PULSE_PERIOD = 200  # ms period for pulsing
-RIVET_PULSE_DUTY = 0.5    # duty cycle for pulsing
-RIVET_LASER_PIN = "laser_pwm3" # New perpendicular laser
-RIVET_OFFSET_X  = 34.0    # mm offset X
-RIVET_OFFSET_Y  = 72.5   # mm offset Y
+
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -365,7 +361,7 @@ def build_boolean_grid(points, res, max_dist):
                     grid.add((cx + dx, cy + dy))
     return grid
 
-def generate_laser_grid(bbox, cx, cy, angle_deg, speed, power, z_hop, spacing, overshoot, label, laser_pin="laser_pwm1", offset_x=0.0, offset_y=0.0, fan_speed=0, preheat=0, overshoot_without_laser=False, cluster=None, wall_expansion=0.45, layer_points=None, layer_z=None, boolean_res=0.2):
+def generate_laser_grid(bbox, cx, cy, angle_deg, speed, power, z_hop, spacing, overshoot, label, laser_pin="laser_pwm1", offset_x=0.0, offset_y=0.0, fan_speed=0, preheat=0, overshoot_without_laser=False, cluster=None, wall_expansion=0.45, layer_points=None, layer_z=None, boolean_res=0.2, retract_length=5.0, retract_at_start=True, unretract_at_end=True, tag_retract=False):
     min_x, min_y, max_x, max_y = bbox
     gcode = []
     f_val = speed * 60.0
@@ -387,8 +383,9 @@ def generate_laser_grid(bbox, cx, cy, angle_deg, speed, power, z_hop, spacing, o
     gcode.append(f"\n; == [{label}] Start - Grid {(max_x-min_x):.1f} x {(max_y-min_y):.1f} mm at {angle_deg} deg, spacing {spacing:.2f} mm ==\n")
 
     gcode.append(f"SET_PIN PIN=laser_pwm1 VALUE=0\nSET_PIN PIN=laser_pwm2 VALUE=0\nSET_PIN PIN=laser_pwm3 VALUE=0\n")
-    gcode.append("G91\n")
-    gcode.append(f"G1 E-5.0 F2400\n")
+    if retract_at_start and retract_length > 0:
+        gcode.append("G91\n")
+        gcode.append(f"G1 E-{retract_length:.1f} F2400\n")
     if layer_z is not None:
         # Use absolute Z to go to the correct height regardless of where we came from
         gcode.append(f"G90\n")
@@ -516,20 +513,24 @@ def generate_laser_grid(bbox, cx, cy, angle_deg, speed, power, z_hop, spacing, o
     if layer_z is not None:
         # Use absolute Z to go back to the correct layer height
         gcode.append(f"G0 Z{layer_z:.3f} F600\n")
-        gcode.append("G91\n")
-        gcode.append(f"G1 E5.0 F2400\n")
-        gcode.append("G90\n")
+        if unretract_at_end and retract_length > 0:
+            gcode.append("G91\n")
+            gcode.append(f"G1 E{retract_length:.1f} F2400\n")
+            gcode.append("G90\n")
     else:
         gcode.append("G91\n")
         gcode.append(f"G1 Z-{z_hop:.2f} F600\n")
-        gcode.append(f"G1 E5.0 F2400\n")
+        if unretract_at_end and retract_length > 0:
+            gcode.append(f"G1 E{retract_length:.1f} F2400\n")
         gcode.append("G90\n")
 
     num_lines = int((max_y - min_y) / spacing) + 1
-    gcode.append(f"; == [{label}] End - {num_lines} lines traced ==\n\n")
+    if tag_retract and retract_length > 0:
+        gcode.append(f"; == [{label}] End - {num_lines} lines traced == RETRACT={retract_length:.1f}\n\n")
+    else:
+        gcode.append(f"; == [{label}] End - {num_lines} lines traced ==\n\n")
 
     return gcode
-
 
 
 def is_point_in_path(pt_x, pt_y, path):
@@ -571,27 +572,32 @@ def build_paths_from_segments(segments):
         
     return paths, path_is_hole
 
-def generate_wobble_passes(wall_segments, prev_segments, current_z, prev_z, start_depth_layers, end_depth_layers, speed, passes_count, x_plus_power, x_minus_power, angle_tol, overshoot=0.0):
+def generate_wobble_passes(wall_segments, prev_segments=None, bottom_segments=None, current_z=0.0, z_drop=0.0, target_z_base=None, speed=20.0, passes_count=1, x_plus_power=0.2, x_minus_power=0.2, angle_tol=55.0, reverse_path=False, reverse_wobble=False, overshoot=0.0, is_seam_blend=False, spacing=None):
     """
-    Generate G-code for Z-wobble passes using high-speed X oscillation.
-    Supports chunking for Deep Mode integration.
+    Unified G-code generator for Z-wobble passes using high-speed X oscillation.
+    Supports both deep chunk sweeps and seam blending, with discrete pull-only or continuous triangular oscillation.
     """
     import math
     gcode = []
     
-    if not wall_segments or start_depth_layers >= end_depth_layers:
+    if not wall_segments or z_drop <= 0:
         return gcode
         
     global WALL_STANDBY_TEMP_DROP, CURRENT_PRINT_TEMP, ENABLE_PURGE, PURGE_X, PURGE_Y, WALL_RETRACT, WALL_MAX_RETRACT
-
-        
-    f_val = speed * 60.0
-    layer_height = current_z - prev_z if (prev_z is not None and current_z > prev_z) else 0.2
+    global WALL_X_PLUS_OFFSET, WALL_X_MINUS_OFFSET, WALL_Z_OFFSET, WALL_DEEP_WOBBLE_SPACING, WALL_DEEP_WOBBLE_CORNER_DISTANCE, WALL_DEEP_WOBBLE_CORNER_POWER_DROP
+    global WALL_WOBBLE_PULL_ONLY, WALL_WOBBLE_PULL_CONTINUOUS, WALL_WOBBLE_PROJECTION_FACTOR, WALL_DEEP_MODE, WALL_DISABLE_OVERHANG, WALL_DEEP_OVERHANG_ANGLE, WALL_WOBBLE_ADAPTIVE_SLOPE
     
-    threshold_dist = layer_height * math.tan(math.radians(WALL_DEEP_OVERHANG_ANGLE)) if (WALL_DEEP_MODE and prev_segments) else float('inf')
+    f_val = speed * 60.0
+    if spacing is None:
+        spacing = WALL_DEEP_WOBBLE_SPACING if not is_seam_blend else getattr(globals(), 'WALL_SEAM_WOBBLE_SPACING', 0.2)
+        
+    threshold_dist = z_drop * math.tan(math.radians(WALL_DEEP_OVERHANG_ANGLE)) if (WALL_DEEP_MODE and prev_segments) else float('inf')
     
     paths, path_is_hole = build_paths_from_segments(wall_segments)
-    
+    if reverse_path:
+        for i in range(len(paths)):
+            paths[i] = [(seg[2], seg[3], seg[0], seg[1]) for seg in reversed(paths[i])]
+            
     # Clean up paths by removing small seam overlaps that cause double-wobble passes
     cleaned_paths = []
     for path in paths:
@@ -600,22 +606,18 @@ def generate_wobble_passes(wall_segments, prev_segments, current_z, prev_z, star
             last_seg = path[-1]
             d_first = math.hypot(first_seg[2]-first_seg[0], first_seg[3]-first_seg[1])
             d_last = math.hypot(last_seg[2]-last_seg[0], last_seg[3]-last_seg[1])
-            
             if d_first > 0.01 and d_last > 0.01:
                 nx1 = (first_seg[2]-first_seg[0])/d_first
                 ny1 = (first_seg[3]-first_seg[1])/d_first
                 nx2 = (last_seg[2]-last_seg[0])/d_last
                 ny2 = (last_seg[3]-last_seg[1])/d_last
-                
-                # If the last segment is parallel to the first and very short (like a slicer seam overlap)
-                if (nx1*nx2 + ny1*ny2) > 0.99 and d_last < 5.0:
+                if (nx1*nx2 + ny1*ny2) > 0.95 and d_last < 5.0:
                     path = path[:-1]
         cleaned_paths.append(path)
     paths = cleaned_paths
     
-    global WALL_SEAM_WOBBLE_CORNER_DISTANCE, WALL_SEAM_WOBBLE_CORNER_POWER_DROP, WALL_WOBBLE_PULL_ONLY
-    paths = split_corners_in_paths(paths, WALL_SEAM_WOBBLE_CORNER_DISTANCE, WALL_SEAM_WOBBLE_CORNER_POWER_DROP, path_is_hole)
-    import math
+    paths = split_corners_in_paths(paths, WALL_DEEP_WOBBLE_CORNER_DISTANCE, WALL_DEEP_WOBBLE_CORNER_POWER_DROP, path_is_hole)
+    
     if overshoot > 0:
         for p in paths:
             if len(p) > 2:
@@ -643,144 +645,134 @@ def generate_wobble_passes(wall_segments, prev_segments, current_z, prev_z, star
                     l_seg[3] = l_seg[3] + (dy/l) * overshoot
                     p[-1] = tuple(l_seg)
 
-    
-    # Removed incorrect 5mm path truncation. Deep Mode seams wrap the entire part.
-    z_start_drop = layer_height * start_depth_layers
-    z_end_drop = layer_height * end_depth_layers
-    z_wobble_dist = z_end_drop - z_start_drop
-    
     x_plus_ratio = WALL_X_PLUS_OFFSET / WALL_Z_OFFSET if WALL_Z_OFFSET != 0 else 0
     x_minus_ratio = WALL_X_MINUS_OFFSET / WALL_Z_OFFSET if WALL_Z_OFFSET != 0 else 0
     
-    target_z_base = current_z - (z_start_drop + z_end_drop) / 2.0
+    if target_z_base is None:
+        target_z_base = current_z
     target_z = target_z_base + WALL_Z_OFFSET
+    z_wobble_dist = z_drop
 
-    last_ex = None
-    last_ey = None
-
-    total_retracted = 0.0
+    initial_retract = min(WALL_RETRACT, WALL_MAX_RETRACT)
+    total_retracted = initial_retract
+    
+    label = "Seam Blend" if is_seam_blend else "Wall Smooth"
+    mode_str = f"DeepMode:{WALL_DEEP_MODE} - Wobble"
+    gcode.append(f"\n; == [{label}] Start - {mode_str} Z Drop:{z_drop:.2f}mm OffsetX1:{WALL_X_PLUS_OFFSET:.2f} OffsetX2:{WALL_X_MINUS_OFFSET:.2f} OffsetZ:{WALL_Z_OFFSET:.2f} ==\n")
+    gcode.append("G91 ; relative\n")
+    gcode.append(f"G1 E-{initial_retract:.1f} F2400 ; [{label}] batch retract\n")
+    gcode.append("G90 ; absolute\n")
+    
     if WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
-        initial_retract = min(WALL_RETRACT, WALL_MAX_RETRACT)
-        total_retracted = initial_retract
-        gcode.append("G91 ; relative\n")
-        gcode.append(f"G1 E-{initial_retract:.1f} F2400 ; [Wobble] batch retract\n")
-        gcode.append("G90 ; absolute\n")
-        
         target_temp = max(0, CURRENT_PRINT_TEMP - WALL_STANDBY_TEMP_DROP)
-        gcode.append(f"M104 S{target_temp} ; [Wobble] Standby temp drop\n")
+        gcode.append(f"M104 S{target_temp} ; [{label}] Standby temp drop\n")
         if ENABLE_PURGE:
             gcode.append(f"G0 Z{current_z + 2.8:.3f} F600 ; z-hop for travel to purge bucket\n")
             gcode.append(f"G0 X{PURGE_X:.3f} Y{PURGE_Y:.3f} F6000 ; move to purge bucket for cooldown\n")
             gcode.append("M106 S255 ; blast fan to cool nozzle faster\n")
             gcode.append("G4 P10000 ; dwell 10 seconds\n")
             gcode.append("M107 ; shut off fan during smoothing\n")
-            gcode.append(f"G0 Z{current_z:.3f} F600 ; return to sweep Z height\n")
+            gcode.append(f"G0 Z{target_z:.3f} F600 ; return to sweep Z height\n")
         else:
             gcode.append("M106 S255 ; blast fan to cool nozzle faster\n")
             gcode.append("G4 P10000 ; dwell 10 seconds\n")
             gcode.append("M107 ; shut off fan during smoothing\n")
 
-
     for pass_idx in range(passes_count):
-        gcode.append(f"\n; == [Wobble Pass {pass_idx+1}/{passes_count}] Start - Layers {start_depth_layers} to {end_depth_layers} ==\n")
-        gcode.append(f"G0 Z{target_z:.3f} F600 ; [Wobble] Drop to seam layer\n")
+        gcode.append(f"\n; == [{label} Pass {pass_idx+1}/{passes_count}] Start ==\n")
+        gcode.append(f"G0 Z{target_z:.3f} F600 ; [Wobble] Set Z height\n")
         
         for path_idx, path in enumerate(paths):
-            area_sum = 0.0
-            for pt_idx in range(len(path)):
-                x1, y1, x2, y2 = path[pt_idx][:4]
-                area_sum += (x2 - x1) * (y2 + y1)
-            
             curr_laser = None
             curr_power = None
-            
-            if WALL_WOBBLE_PULL_ONLY:
-                new_path = []
-                push_group = []
-                for seg in path:
-                    x1, y1, x2, y2 = seg[:4]
-                    dx, dy = x2 - x1, y2 - y1
-                    l = math.hypot(dx, dy)
-                    if l < 0.001:
-                        norm_seg = list(seg)
-                        if len(norm_seg) == 4: norm_seg.append(1.0)
-                        norm_seg.append("PLUS")
-                        new_path.append(tuple(norm_seg))
-                        continue
-                    
-                    nx = dy
-                    if nx > abs(x2 - x1) * 0.1:
-                        laser_dir_seg = "PLUS"
-                    elif nx < -abs(x2 - x1) * 0.1:
-                        laser_dir_seg = "MINUS"
-                    else:
-                        laser_dir_seg = curr_laser if curr_laser else "PLUS"
-                    
-                    should_reverse = False
-                    if laser_dir_seg == "PLUS" and dx < -0.001:
-                        should_reverse = True
-                    elif laser_dir_seg == "MINUS" and dx > 0.001:
-                        should_reverse = True
-                    
-                    if should_reverse:
-                        rev_seg = list(seg)
-                        rev_seg[0], rev_seg[1], rev_seg[2], rev_seg[3] = x2, y2, x1, y1
-                        if len(rev_seg) == 4: rev_seg.append(1.0)
-                        rev_seg.append(laser_dir_seg)
-                        push_group.append(tuple(rev_seg))
-                    else:
-                        if push_group:
-                            new_path.extend(reversed(push_group))
-                            push_group = []
-                        norm_seg = list(seg)
-                        if len(norm_seg) == 4: norm_seg.append(1.0)
-                        norm_seg.append(laser_dir_seg)
-                        new_path.append(tuple(norm_seg))
-                if push_group:
-                    new_path.extend(reversed(push_group))
-                path = new_path
-            
-            for pt_idx in range(len(path)):
-                seg = path[pt_idx]
+            last_ex = None
+            last_ey = None
+
+            # Split path into sub-paths by laser side AND by monotonic X direction (dx sign)
+            sub_paths = []
+            curr_sub = []
+            curr_dir = None
+            curr_dx_sign = None
+            for seg in path:
                 x1, y1, x2, y2 = seg[:4]
-                power_factor = seg[4] if len(seg) > 4 else 1.0
-                
-                dx = x2 - x1
-                dy = y2 - y1
+                dx, dy = x2 - x1, y2 - y1
                 if dx == 0 and dy == 0: continue
-                    
-                angle = math.degrees(math.atan2(abs(x2 - x1), abs(dy)))
-                if angle > angle_tol:
-                    if curr_laser is not None:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                        curr_laser = None
-                    continue
-                    
-                    
+                
                 nx = dy
-                if nx > abs(x2 - x1) * 0.1:
-                    laser_dir = "PLUS"
-                elif nx < -abs(x2 - x1) * 0.1:
-                    laser_dir = "MINUS"
+                if nx > abs(dx) * 0.1:
+                    laser_dir_seg = "PLUS"
+                elif nx < -abs(dx) * 0.1:
+                    laser_dir_seg = "MINUS"
                 else:
-                    laser_dir = curr_laser if curr_laser else "PLUS"
+                    laser_dir_seg = curr_dir if curr_dir else "PLUS"
                     
-                # Overhang Detection for Wobble
-                is_overhang = False
-                if WALL_DEEP_MODE and not WALL_DISABLE_OVERHANG:
-                    if not prev_segments:
-                        is_overhang = True
-                    else:
+                dx_sign = 1 if dx > 0.001 else (-1 if dx < -0.001 else 0)
+                    
+                norm_seg = list(seg)
+                if len(norm_seg) == 4: norm_seg.append(1.0)
+                if len(norm_seg) == 5: norm_seg.append(laser_dir_seg)
+                else: norm_seg[5] = laser_dir_seg
+                
+                split_needed = (curr_dir != laser_dir_seg) or (curr_dx_sign is not None and dx_sign != 0 and curr_dx_sign != dx_sign)
+                
+                if curr_dir is None or split_needed:
+                    if curr_sub:
+                        sub_paths.append((curr_dir, curr_sub))
+                    curr_dir = laser_dir_seg
+                    curr_dx_sign = dx_sign if dx_sign != 0 else curr_dx_sign
+                    curr_sub = [tuple(norm_seg)]
+                else:
+                    if dx_sign != 0:
+                        curr_dx_sign = dx_sign
+                    curr_sub.append(tuple(norm_seg))
+            if curr_sub:
+                sub_paths.append((curr_dir, curr_sub))
+                
+            # Process each continuous sub-path
+            for l_dir, sp in sub_paths:
+                if not sp: continue
+                
+                # Enforce Pull-Only direction:
+                # X+ laser (mounted right) pulls with dx > 0 (reverse if dx < 0)
+                # X- laser (mounted left) pulls with dx < 0 (reverse if dx > 0)
+                total_dx = sp[-1][2] - sp[0][0]
+                should_rev = False
+                if l_dir == "PLUS" and total_dx < -0.001:
+                    should_rev = True
+                elif l_dir == "MINUS" and total_dx > 0.001:
+                    should_rev = True
+                if should_rev:
+                    sp = [(s[2], s[3], s[0], s[1], s[4], s[5]) for s in reversed(sp)]
+                
+                for pt_idx in range(len(sp)):
+                    seg = sp[pt_idx]
+                    x1, y1, x2, y2 = seg[:4]
+                    power_scale = seg[4] if len(seg) > 4 else 1.0
+                    laser_dir = seg[5] if len(seg) > 5 else l_dir
+                    dx = x2 - x1
+                    dy = y2 - y1
+                    segment_len = math.hypot(dx, dy)
+                    if segment_len < 0.001: continue
+                    
+                    angle = math.degrees(math.atan2(abs(dx), abs(dy)))
+                    if angle > angle_tol:
+                        if curr_laser is not None:
+                            gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
+                            curr_laser = None
+                        continue
+                        
+                    laser_dir = seg[5]
+                    
+                    # Overhang detection
+                    is_overhang = False
+                    if WALL_DEEP_MODE and not WALL_DISABLE_OVERHANG and prev_segments:
                         mx, my = (x1 + x2) / 2.0, (y1 + y2) / 2.0
                         min_dx = None
                         closest_px = None
                         for (px1, py1, px2, py2) in prev_segments:
                             min_y, max_y = min(py1, py2), max(py1, py2)
                             if min_y - 0.1 <= my <= max_y + 0.1:
-                                if py1 != py2:
-                                    px = px1 + (my - py1) * (px2 - px1) / (py2 - py1)
-                                else:
-                                    px = (px1 + px2) / 2.0
+                                px = px1 + (my - py1) * (px2 - px1) / (py2 - py1) if py1 != py2 else (px1 + px2) / 2.0
                                 ox = mx - px
                                 if closest_px is None or abs(ox) < abs(min_dx):
                                     min_dx = ox
@@ -792,126 +784,904 @@ def generate_wobble_passes(wall_segments, prev_segments, current_z, prev_z, star
                                 is_overhang = True
                             elif laser_dir == "MINUS" and min_dx < -threshold_dist:
                                 is_overhang = True
-                            
-                if is_overhang:
-                    if curr_laser is not None:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                        curr_laser = None
-                    continue # Skip overhangs during deep wobble sweeps!
-                    
-                base_shift = WALL_X_PLUS_OFFSET if laser_dir == "PLUS" else WALL_X_MINUS_OFFSET
-                ratio = x_plus_ratio if laser_dir == "PLUS" else x_minus_ratio
-                base_power = x_plus_power if laser_dir == "PLUS" else x_minus_power
-                power = base_power * power_factor
-                
-                segment_len = math.hypot(dx, dy)
-                ndx = dx / segment_len
-                ndy = dy / segment_len
-                
-                num_wobbles = int(segment_len / max(0.01, WALL_SEAM_WOBBLE_SPACING))
-                if num_wobbles < 1: num_wobbles = 1
-                step_len = segment_len / num_wobbles
-                
-                start_nx = x1 + base_shift
-                
-                if pass_idx > 0 or (last_ex is not None and last_ey is not None):
-                    if last_ex is not None and last_ey is not None:
-                        dist_back = math.hypot(start_nx - last_ex, y1 - last_ey)
-                        if dist_back > 1.0:
-                            if curr_laser is not None:
-                                gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                                curr_laser = None
-                            gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                        else:
-                            gcode.append(f"G1 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                    else:
-                        gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                else:
-                    gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                
-                pin = "laser_pwm1" if laser_dir == "PLUS" else "laser_pwm2"
-                if curr_laser != pin or curr_power is None or abs(curr_power - power) > 0.001:
-                    if curr_laser is not None and curr_laser != pin:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                    if power >= 0.01:
-                        gcode.append(f"SET_PIN PIN={pin} VALUE={power:.3f}\n")
-                    curr_laser = pin
-                    curr_power = power
-                    
-                if power < 0.01:
-                    if curr_laser is not None:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                        curr_laser = None
-                
-                base_wobble_amplitude_x = z_wobble_dist * ratio * WALL_WOBBLE_PROJECTION_FACTOR
-
-                perp_x = base_wobble_amplitude_x
-                perp_y = 0.0
-
-                for i in range(num_wobbles):
-                    if WALL_WOBBLE_PULL_ONLY and not WALL_WOBBLE_PULL_CONTINUOUS:
-                        current_perp_x = perp_x
-                        current_perp_y = perp_y
-                        
-                        pt_base_x = x1 + ndx * (i * step_len) + base_shift
-                        pt_base_y = y1 + ndy * (i * step_len)
-                        
-                        pt_peak_x = pt_base_x + current_perp_x
-                        pt_peak_y = pt_base_y + current_perp_y
-                        
+                    if is_overhang:
                         if curr_laser is not None:
                             gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
                             curr_laser = None
-                        gcode.append(f"G0 X{pt_base_x:.3f} Y{pt_base_y:.3f} F6000\n")
+                        continue
                         
-                        curr_laser = "laser_pwm1" if laser_dir == "PLUS" else "laser_pwm2"
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE={power:.3f}\n")
-                        gcode.append(f"G1 X{pt_peak_x:.3f} Y{pt_peak_y:.3f} F{f_val}\n")
-                    else:
-                        is_out = (i % 2 == 0)
-                        current_perp_x = perp_x if is_out else -perp_x
-                        current_perp_y = perp_y if is_out else -perp_y
-                        
-                        pt_base_x = x1 + ndx * (i * step_len) + base_shift
-                        pt_base_y = y1 + ndy * (i * step_len)
-                        
-                        pt_peak_x = pt_base_x + current_perp_x
-                        pt_peak_y = pt_base_y + current_perp_y
-                        
-                        # 1. Sweep vertically to the peak
-                        gcode.append(f"G1 X{pt_peak_x:.3f} Y{pt_peak_y:.3f} F{f_val}\n")
-                        
-                        # 2. Sweep horizontally to the next position along the peak
-                        pt_next_base_x = x1 + ndx * ((i+1) * step_len) + base_shift
-                        pt_next_base_y = y1 + ndy * ((i+1) * step_len)
-                        
-                        pt_next_peak_x = pt_next_base_x + current_perp_x
-                        pt_next_peak_y = pt_next_base_y + current_perp_y
-                        
-                        gcode.append(f"G1 X{pt_next_peak_x:.3f} Y{pt_next_peak_y:.3f} F{f_val}\n")
-                        
-                        pt_end_x = pt_next_peak_x
-                        pt_end_y = pt_next_peak_y
-                
-                # Return to baseline at the end of the segment for a clean transition
-                pt_final_base_x = x1 + ndx * (num_wobbles * step_len) + base_shift
-                pt_final_base_y = y1 + ndy * (num_wobbles * step_len)
-                gcode.append(f"G1 X{pt_final_base_x:.3f} Y{pt_final_base_y:.3f} F{f_val}\n")
-                
-                last_ex = pt_final_base_x
-                last_ey = pt_final_base_y
+                    base_shift = WALL_X_PLUS_OFFSET if laser_dir == "PLUS" else WALL_X_MINUS_OFFSET
+                    ratio = x_plus_ratio if laser_dir == "PLUS" else x_minus_ratio
+                    power = (x_plus_power if laser_dir == "PLUS" else x_minus_power) * power_scale
                     
-            if curr_laser is not None:
-                gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-            
-    # Return to layer Z so subsequent smooth pass can correctly position itself
-    gcode.append(f"G0 Z{current_z:.3f} F600 ; [Wobble] Return to layer Z\n")
+                    ndx = dx / segment_len
+                    ndy = dy / segment_len
+                    
+                    num_wobbles = int(segment_len / max(0.01, spacing))
+                    if num_wobbles < 1: num_wobbles = 1
+                    step_len = segment_len / num_wobbles
+                    
+                    start_nx = x1 + base_shift
+                    
+                    if pass_idx > 0 or (last_ex is not None and last_ey is not None):
+                        if last_ex is not None and last_ey is not None:
+                            dist_back = math.hypot(start_nx - last_ex, y1 - last_ey)
+                            if dist_back > 1.0:
+                                if curr_laser is not None:
+                                    gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
+                                    curr_laser = None
+                                gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
+                            else:
+                                gcode.append(f"G1 X{start_nx:.3f} Y{y1:.3f} F6000\n")
+                        else:
+                            gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
+                    else:
+                        gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
+                        
+                    pin = "laser_pwm1" if laser_dir == "PLUS" else "laser_pwm2"
+                    if curr_laser != pin or curr_power is None or abs(curr_power - power) > 0.001:
+                        if curr_laser is not None and curr_laser != pin:
+                            gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
+                        if power >= 0.01:
+                            gcode.append(f"SET_PIN PIN={pin} VALUE={power:.3f}\n")
+                        curr_laser = pin
+                        curr_power = power
+                        
+                    if power < 0.01:
+                        if curr_laser is not None:
+                            gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
+                            curr_laser = None
+                            
+                    base_wobble_amplitude_x = z_wobble_dist * ratio * WALL_WOBBLE_PROJECTION_FACTOR
+                    
+                    for i in range(num_wobbles):
+                        mid_x = x1 + ndx * ((i + 0.5) * step_len)
+                        mid_y = y1 + ndy * ((i + 0.5) * step_len)
+                        
+                        dx_slope = 0.0
+                        if WALL_WOBBLE_ADAPTIVE_SLOPE and bottom_segments:
+                            min_dist_sq = 9999.0
+                            nearest_bx = mid_x
+                            for bs in bottom_segments:
+                                bx1, by1, bx2, by2 = bs[:4]
+                                b_dx, b_dy = bx2 - bx1, by2 - by1
+                                b_len_sq = b_dx * b_dx + b_dy * b_dy
+                                if b_len_sq < 1e-6:
+                                    t = 0.0
+                                else:
+                                    t = max(0.0, min(1.0, ((mid_x - bx1) * b_dx + (mid_y - by1) * b_dy) / b_len_sq))
+                                proj_bx = bx1 + t * b_dx
+                                proj_by = by1 + t * b_dy
+                                d_sq = (mid_x - proj_bx)**2 + (mid_y - proj_by)**2
+                                if d_sq < min_dist_sq:
+                                    min_dist_sq = d_sq
+                                    nearest_bx = proj_bx
+                            
+                            if min_dist_sq < 25.0: # within 5mm search radius
+                                raw_offset = nearest_bx - mid_x
+                                dx_slope = max(-3.0, min(3.0, raw_offset))
+                        
+                        # Continuous triangular zig-zag wave with adaptive slope compensation
+                        # Move 1: Base to Apex (midpoint of step)
+                        pt_apex_x = mid_x + base_shift + base_wobble_amplitude_x + dx_slope
+                        pt_apex_y = mid_y
+                        gcode.append(f"G1 X{pt_apex_x:.3f} Y{pt_apex_y:.3f} F{f_val:.0f}\n")
+                        
+                        # Move 2: Apex to Base (end of step)
+                        pt_base_x = x1 + ndx * ((i + 1.0) * step_len) + base_shift
+                        pt_base_y = y1 + ndy * ((i + 1.0) * step_len)
+                        gcode.append(f"G1 X{pt_base_x:.3f} Y{pt_base_y:.3f} F{f_val:.0f}\n")
+                            
+                    pt_final_base_x = x1 + ndx * (num_wobbles * step_len) + base_shift
+                    pt_final_base_y = y1 + ndy * (num_wobbles * step_len)
+                    last_ex = pt_final_base_x
+                    last_ey = pt_final_base_y
+                    
+                if curr_laser is not None:
+                    gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
+                    curr_laser = None
+
+    gcode.append(f"G0 Z{current_z:.3f} F600 ; [{label}] Return to layer Z\n")
+    if WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
+        gcode.append(f"M109 S{CURRENT_PRINT_TEMP} ; [{label}] Restore print temp and wait\n")
+    gcode.append(f"; == [{label}] End == RETRACT={total_retracted:.1f}\n\n")
+    return gcode
+
+
+def generate_voxel_wobble_passes(top_segments, bottom_segments=None, top_z=0.0, bottom_z=0.0,
+                                 current_printed_z=None, speed=20.0, x_plus_power=0.2, x_minus_power=0.2,
+                                 overhang_plus_power=None, overhang_minus_power=None, angle_tol=65.0,
+                                 reverse_path=False, overshoot=0.0, spacing=0.2, x_scale=1.0,
+                                 corner_power_drop=0.5, corner_distance=1.5, retract_length=None,
+                                 label="VOXEL WALL SMOOTH"):
+    """
+    Generate continuous 3D slope-adaptive Voxel Wobble passes along outer wall perimeters.
+    Features:
+      - Strict Pull-Only Macro Movement (+X for Laser 1, -X for Laser 2)
+      - Stroke-by-stroke slope & overhang speed modulation
+      - Continuous corner & low-material power ramping
+      - Defocusing X-sweep scaling factor (x_scale) with bed/chunk physical bounds clamping
+      - Thermal safety clearance (operating_z based on current_printed_z)
+    """
+    import math
+    gcode = []
+    
+    if not top_segments:
+        return gcode
+        
+    global WALL_STANDBY_TEMP_DROP, CURRENT_PRINT_TEMP, ENABLE_PURGE, PURGE_X, PURGE_Y, WALL_RETRACT, WALL_MAX_RETRACT
+    global WALL_X_PLUS_OFFSET, WALL_X_MINUS_OFFSET, WALL_Z_OFFSET, WALL_WOBBLE_PROJECTION_FACTOR
+    
+    z_drop = max(0.2, top_z - bottom_z)
+    curr_pz = current_printed_z if current_printed_z is not None else top_z
+    operating_z = top_z + WALL_Z_OFFSET
+    
+    # Machine bounds
+    X_MIN, X_MAX = -6.0, 235.0
+    Y_MIN, Y_MAX = -2.0, 235.0
+    Z_MIN, Z_MAX = 0.0, 268.0
+    
+    if operating_z > Z_MAX:
+        return gcode
+        
+    if speed is None: speed = 20.0
+    if x_plus_power is None: x_plus_power = 0.2
+    if x_minus_power is None: x_minus_power = 0.2
+    nominal_feedrate = max(1.0, speed) * 60.0
+    min_feedrate = getattr(globals(), 'WALL_MIN_SPEED', 5.0) * 60.0
+    max_feedrate = getattr(globals(), 'WALL_MAX_SPEED', 120.0) * 60.0
+    travel_feedrate = 6000.0
+    
+    x_plus_ratio = WALL_X_PLUS_OFFSET / WALL_Z_OFFSET if WALL_Z_OFFSET != 0 else 0
+    x_minus_ratio = WALL_X_MINUS_OFFSET / WALL_Z_OFFSET if WALL_Z_OFFSET != 0 else 0
+    
+    eff_overhang_plus = overhang_plus_power if overhang_plus_power is not None else x_plus_power
+    eff_overhang_minus = overhang_minus_power if overhang_minus_power is not None else x_minus_power
+    
+    if retract_length is None:
+        retract_length = WALL_RETRACT
+    total_retracted = 0.0
+    
+    # Header
+    gcode.append(f"\n; == [{label}] Start - Voxel Wobble Z Drop:{z_drop:.2f}mm OffsetX1:{WALL_X_PLUS_OFFSET:.2f} OffsetX2:{WALL_X_MINUS_OFFSET:.2f} OffsetZ:{WALL_Z_OFFSET:.2f} | top_z={top_z:.3f} | operating_z={operating_z:.3f} ==\n")
+    gcode.append("SET_PIN PIN=laser_pwm1 VALUE=0\n")
+    gcode.append("SET_PIN PIN=laser_pwm2 VALUE=0\n")
     
     if WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
-        gcode.append(f"M109 S{CURRENT_PRINT_TEMP} ; [Wobble] Restore print temp and wait\n")
+        standby_temp = max(120, CURRENT_PRINT_TEMP - int(WALL_STANDBY_TEMP_DROP))
+        gcode.append(f"M104 S{standby_temp} ; [{label}] Drop extruder temp to {standby_temp}C\n")
         
-    gcode.append(f"; == [Wobble Pass] End == RETRACT={total_retracted:.1f}\n")
+    if retract_length > 0:
+        gcode.append("G91\n")
+        gcode.append(f"G1 E-{retract_length:.2f} F2400 ; [{label}] Initial retraction\n")
+        gcode.append("G90\n")
+        total_retracted += retract_length
+        
+    gcode.append(f"G0 Z{operating_z:.3f} F{travel_feedrate:.0f}\n")
+    
+    res = build_paths_from_segments(top_segments)
+    if isinstance(res, tuple):
+        paths, path_is_hole = res
+    else:
+        paths = res
+        path_is_hole = [False] * len(paths)
+        
+    if not paths:
+        return gcode
+        
+    # Vertical distance from toolhead down to the top of the chunk being smoothed
+    beam_depth_top = operating_z - top_z
+    min_area = getattr(globals(), 'WALL_SMOOTH_MIN_PATH_AREA', 0.0)
+    
+    for p_idx, raw_path in enumerate(paths):
+        if not raw_path:
+            continue
+            
+        is_hole = path_is_hole[p_idx] if p_idx < len(path_is_hole) else False
+        
+        if min_area > 0.0 and len(raw_path) > 2:
+            area_sum = 0.0
+            for seg in raw_path:
+                x1, y1, x2, y2 = seg[:4]
+                area_sum += (x2 - x1) * (y2 + y1)
+            x_first, y_first = raw_path[0][0], raw_path[0][1]
+            x_last, y_last = raw_path[-1][2], raw_path[-1][3]
+            area_sum += (x_first - x_last) * (y_first + y_last)
+            path_area = abs(area_sum) / 2.0
+            if path_area < min_area and math.hypot(x_first - x_last, y_first - y_last) < 1.0:
+                continue
+            
+        # Step 1: Filter segments by angle tolerance and split into continuous sub-chains
+        chains = []
+        curr_chain = []
+        for seg in raw_path:
+            x1, y1, x2, y2 = seg[:4]
+            dx, dy = x2 - x1, y2 - y1
+            seg_len = math.hypot(dx, dy)
+            if seg_len < 1e-6:
+                continue
+                
+            # Angle deviation from Y axis (0 deg = pure Y; 90 deg = pure X)
+            seg_angle = math.degrees(math.atan2(abs(dx), abs(dy)))
+            if seg_angle > angle_tol:
+                if curr_chain:
+                    chains.append(curr_chain)
+                    curr_chain = []
+                continue
+                
+            if curr_chain:
+                last_x2, last_y2 = curr_chain[-1][2], curr_chain[-1][3]
+                if math.hypot(x1 - last_x2, y1 - last_y2) > 0.5:
+                    chains.append(curr_chain)
+                    curr_chain = []
+                    
+            curr_chain.append(seg)
+        if curr_chain:
+            chains.append(curr_chain)
+            
+        pull_only_subpaths = []
+        for chain in chains:
+            if not chain:
+                continue
+                
+            tagged_segs = []
+            for seg in chain:
+                x1, y1, x2, y2 = seg[:4]
+                dx, dy = x2 - x1, y2 - y1
+                nx = -dy if is_hole else dy
+                laser_side = "PLUS" if nx >= 0.0 else "MINUS"
+                dx_sign = 1 if dx > 0.001 else (-1 if dx < -0.001 else 0)
+                tagged_segs.append((laser_side, dx_sign, (x1, y1, x2, y2)))
+                
+            if not tagged_segs:
+                continue
+                
+            sub_groups = []
+            curr_side = tagged_segs[0][0]
+            curr_dx_sign = tagged_segs[0][1]
+            curr_segs = [tagged_segs[0][2]]
+            
+            for side, dx_sign, seg in tagged_segs[1:]:
+                split_needed = (side != curr_side) or (curr_dx_sign != 0 and dx_sign != 0 and dx_sign != curr_dx_sign)
+                if split_needed:
+                    sub_groups.append((curr_side, curr_segs))
+                    curr_side = side
+                    curr_dx_sign = dx_sign if dx_sign != 0 else curr_dx_sign
+                    curr_segs = [seg]
+                else:
+                    if dx_sign != 0:
+                        curr_dx_sign = dx_sign
+                    curr_segs.append(seg)
+            if curr_segs:
+                sub_groups.append((curr_side, curr_segs))
+                
+            for side, segs in sub_groups:
+                if not segs:
+                    continue
+                total_dx = segs[-1][2] - segs[0][0]
+                should_reverse = False
+                if side == "PLUS" and total_dx < -0.001:
+                    should_reverse = True
+                elif side == "MINUS" and total_dx > 0.001:
+                    should_reverse = True
+                    
+                # If Pass 2 requested path reversal
+                if reverse_path:
+                    should_reverse = not should_reverse
+                    
+                if should_reverse:
+                    rev_segs = [(s[2], s[3], s[0], s[1]) for s in reversed(segs)]
+                    pull_only_subpaths.append((side, rev_segs))
+                else:
+                    pull_only_subpaths.append((side, segs))
+                
+        for laser_dir, sp in pull_only_subpaths:
+            if not sp:
+                continue
+                
+            pin = "laser_pwm1" if laser_dir == "PLUS" else "laser_pwm2"
+            ratio = x_plus_ratio if laser_dir == "PLUS" else x_minus_ratio
+            base_shift = WALL_X_PLUS_OFFSET if laser_dir == "PLUS" else WALL_X_MINUS_OFFSET
+            base_power = x_plus_power if laser_dir == "PLUS" else x_minus_power
+            overhang_power = eff_overhang_plus if laser_dir == "PLUS" else eff_overhang_minus
+            
+            effective_x_scale = x_scale if (x_scale is not None and x_scale != 1.0) else getattr(globals(), 'WALL_WOBBLE_X_SCALE', 1.0)
+            
+            # Physical and bed bounds clamping: laser must never project below the bed (Z = 0.0)
+            # or overshoot chunk bottom by more than 0.2mm
+            max_allowed_drop = max(0.2, top_z - max(0.0, bottom_z - 0.2))
+            raw_amplitude_x = z_drop * ratio * effective_x_scale
+            if laser_dir == "PLUS":
+                base_wobble_amplitude_x = max(0.0, min(raw_amplitude_x, max_allowed_drop * ratio))
+            else:
+                base_wobble_amplitude_x = min(0.0, max(raw_amplitude_x, max_allowed_drop * ratio))
+            
+            total_subpath_len = sum(math.hypot(s[2] - s[0], s[3] - s[1]) for s in sp)
+            accumulated_dist = 0.0
+            
+            # Travel to path start
+            first_x, first_y = sp[0][0], sp[0][1]
+            start_tx = first_x + base_shift
+            start_ty = first_y
+            
+            if overshoot > 1e-6 and len(sp) > 0:
+                dx0 = sp[0][2] - sp[0][0]
+                dy0 = sp[0][3] - sp[0][1]
+                l0 = math.hypot(dx0, dy0)
+                if l0 > 1e-6:
+                    start_tx -= (dx0 / l0) * overshoot
+                    start_ty -= (dy0 / l0) * overshoot
+                    
+            start_tx = max(X_MIN, min(X_MAX, start_tx))
+            start_ty = max(Y_MIN, min(Y_MAX, start_ty))
+                
+            gcode.append(f"G0 X{start_tx:.3f} Y{start_ty:.3f} F{travel_feedrate:.0f}\n")
+            
+            curr_pwr = None
+            laser_active = False
+            
+            for seg in sp:
+                x1, y1, x2, y2 = seg
+                dx, dy = x2 - x1, y2 - y1
+                seg_len = math.hypot(dx, dy)
+                if seg_len < 1e-6:
+                    continue
+                    
+                ndx, ndy = dx / seg_len, dy / seg_len
+                num_wobbles = max(1, int(round(seg_len / max(0.05, spacing))))
+                step_len = seg_len / num_wobbles
+                
+                nom_dx = base_wobble_amplitude_x
+                nom_dy = 0.5 * step_len
+                nom_stroke_len = max(0.1, math.hypot(nom_dx, nom_dy))
+                
+                for i in range(num_wobbles):
+                    dist_along = accumulated_dist + (i + 0.5) * step_len
+                    dist_from_bound = min(dist_along, total_subpath_len - dist_along)
+                    if dist_from_bound < corner_distance and corner_distance > 0:
+                        ramp = corner_power_drop + (1.0 - corner_power_drop) * (dist_from_bound / corner_distance)
+                    else:
+                        ramp = 1.0
+                        
+                    mid_x = x1 + ndx * ((i + 0.5) * step_len)
+                    mid_y = y1 + ndy * ((i + 0.5) * step_len)
+                    
+                    dx_slope = 0.0
+                    if bottom_segments:
+                        closest_dist_sq = float('inf')
+                        closest_bx = mid_x
+                        for bs in bottom_segments:
+                            bx1, by1, bx2, by2 = bs[:4]
+                            bdx, bdy = bx2 - bx1, by2 - by1
+                            bl2 = bdx * bdx + bdy * bdy
+                            if bl2 < 1e-6:
+                                t = 0.0
+                            else:
+                                t = max(0.0, min(1.0, ((mid_x - bx1) * bdx + (mid_y - by1) * bdy) / bl2))
+                            pbx = bx1 + t * bdx
+                            pby = by1 + t * bdy
+                            d_sq = (mid_x - pbx) ** 2 + (mid_y - pby) ** 2
+                            if d_sq < closest_dist_sq:
+                                closest_dist_sq = d_sq
+                                closest_bx = pbx
+                                
+                        if closest_dist_sq < 25.0:
+                            raw_shift = closest_bx - mid_x
+                            dx_slope = max(-3.0, min(3.0, raw_shift))
+                            
+                    overhang_angle = math.degrees(math.atan2(abs(dx_slope), z_drop))
+                    if overhang_angle > 10.0:
+                        ratio_ovh = min(1.0, overhang_angle / 45.0)
+                        effective_base_pwr = base_power + (overhang_power - base_power) * ratio_ovh
+                    else:
+                        effective_base_pwr = base_power
+                        
+                    target_pwr = max(0.065, effective_base_pwr * ramp)
+                    
+                    if not laser_active or curr_pwr != target_pwr:
+                        gcode.append(f"SET_PIN PIN={pin} VALUE={target_pwr:.3f}\n")
+                        laser_active = True
+                        curr_pwr = target_pwr
+                        
+                    base_prev_x = max(X_MIN, min(X_MAX, x1 + ndx * (i * step_len) + base_shift))
+                    base_prev_y = max(Y_MIN, min(Y_MAX, y1 + ndy * (i * step_len)))
+                    
+                    apex_x = max(X_MIN, min(X_MAX, mid_x + base_shift + base_wobble_amplitude_x + (dx_slope * effective_x_scale)))
+                    apex_y = max(Y_MIN, min(Y_MAX, mid_y))
+                    
+                    base_next_x = max(X_MIN, min(X_MAX, x1 + ndx * ((i + 1.0) * step_len) + base_shift))
+                    base_next_y = max(Y_MIN, min(Y_MAX, y1 + ndy * ((i + 1.0) * step_len)))
+                    
+                    # Move 1: Base -> Apex
+                    stroke1_len = math.hypot(apex_x - base_prev_x, apex_y - base_prev_y)
+                    speed1 = nominal_feedrate * (stroke1_len / nom_stroke_len)
+                    feedrate1 = max(min_feedrate, min(max_feedrate, speed1))
+                    gcode.append(f"G1 X{apex_x:.3f} Y{apex_y:.3f} F{feedrate1:.0f}\n")
+                    
+                    # Move 2: Apex -> Base
+                    stroke2_len = math.hypot(base_next_x - apex_x, base_next_y - apex_y)
+                    speed2 = nominal_feedrate * (stroke2_len / nom_stroke_len)
+                    feedrate2 = max(min_feedrate, min(max_feedrate, speed2))
+                    gcode.append(f"G1 X{base_next_x:.3f} Y{base_next_y:.3f} F{feedrate2:.0f}\n")
+                    
+                accumulated_dist += seg_len
+                
+            if overshoot > 1e-6 and len(sp) > 0:
+                last_seg = sp[-1]
+                dxL = last_seg[2] - last_seg[0]
+                dyL = last_seg[3] - last_seg[1]
+                lL = math.hypot(dxL, dyL)
+                if lL > 1e-6:
+                    end_tx = max(X_MIN, min(X_MAX, last_seg[2] + base_shift + (dxL / lL) * overshoot))
+                    end_ty = max(Y_MIN, min(Y_MAX, last_seg[3] + (dyL / lL) * overshoot))
+                    gcode.append(f"G1 X{end_tx:.3f} Y{end_ty:.3f} F{nominal_feedrate:.0f}\n")
+                    
+            if laser_active:
+                gcode.append(f"SET_PIN PIN={pin} VALUE=0\n")
+                
+    gcode.append(f"G0 Z{curr_pz:.3f} F{travel_feedrate:.0f}\n")
+    if retract_length > 0:
+        gcode.append("G91\n")
+        gcode.append(f"G1 E{retract_length:.2f} F2400 ; [{label}] Restore retraction\n")
+        gcode.append("G90\n")
+        
+    if ENABLE_PURGE:
+        gcode.append(f"G0 X{PURGE_X:.1f} Y{PURGE_Y:.1f} F9000 ; Mid-air purge position\n")
+        gcode.append(f"G1 E{getattr(globals(), 'PURGE_EXTRA', 20.0):.1f} F300 ; Mid-air purge prime\n")
+        
+    if WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
+        gcode.append(f"M109 S{CURRENT_PRINT_TEMP} ; [{label}] Restore print temp and wait\n")
+        
+    gcode.append(f"; == [{label}] End ==\n")
     return gcode
+
+
+# ═════════════════════════════════════════════════════════════════════
+#  VOXEL RAYCAST 3D WALL SMOOTHER (Elevated 3D Beam Raycasting & Physics)
+# ═════════════════════════════════════════════════════════════════════
+
+def _is_point_inside_polygon(px, py, segments):
+    """Ray-crossing test for point in polygon defined by list of segments (x1, y1, x2, y2)."""
+    if not segments:
+        return False
+    inside = False
+    for x1, y1, x2, y2 in segments:
+        if (y1 > py) != (y2 > py):
+            intersect_x = x1 + (py - y1) * (x2 - x1) / (y2 - y1)
+            if px < intersect_x:
+                inside = not inside
+    return inside
+
+
+def check_3d_sloped_occlusion(px, py, pz, laser_dir, tan_theta, chunk_layers, layer_outer_walls_map, layer_z_map):
+    """
+    Raycast from surface point (px, py, pz) toward the laser source at elevation theta.
+    Laser 1 (PLUS):  Ray moves (+s, 0, +s * tan_theta)
+    Laser 2 (MINUS): Ray moves (-s, 0, +s * tan_theta)
+    Returns True if occluded by an overhang or upper wall structure, False otherwise.
+    """
+    if not chunk_layers or not layer_outer_walls_map or not layer_z_map:
+        return False
+    
+    dir_sign = 1.0 if laser_dir == "PLUS" else -1.0
+    
+    # Check upper layers within the chunk and above
+    for l_idx in chunk_layers:
+        lz = layer_z_map.get(l_idx, None)
+        if lz is None or lz <= pz + 0.05:
+            continue
+        dz = lz - pz
+        s = dz / tan_theta
+        rx = px + dir_sign * s
+        ry = py
+        
+        # Test if ray point is inside the upper layer perimeter
+        upper_segs = layer_outer_walls_map.get(l_idx, [])
+        if upper_segs and _is_point_inside_polygon(rx, ry, upper_segs):
+            return True
+            
+    return False
+
+
+def generate_voxel_raycast_wall_passes(top_segments, chunk_layers=None, layer_outer_walls_map=None, layer_z_map=None,
+
+                                       top_z=0.0, bottom_z=0.0, current_printed_z=None, speed=20.0,
+                                       x_plus_power=0.2, x_minus_power=0.2, overhang_plus_power=None,
+                                       overhang_minus_power=None, angle_tol=65.0, reverse_path=False,
+                                       overshoot=1.0, spacing=0.2, theta_deg=22.0, min_speed=5.0,
+                                       max_speed=120.0, corner_power_drop=0.5, corner_distance=1.5,
+                                       retract_length=None, label="VOXEL RAYCAST WALL SMOOTH"):
+    """
+    Generate 3D sloped raycast wall smoothing passes using True 3D Surface Voxel Column Reconstruction.
+    """
+    import math
+    gcode = []
+    
+    if not top_segments and not chunk_layers:
+        return gcode
+        
+    global WALL_STANDBY_TEMP_DROP, CURRENT_PRINT_TEMP, ENABLE_PURGE, PURGE_X, PURGE_Y, WALL_RETRACT, WALL_MAX_RETRACT
+    global WALL_X_PLUS_OFFSET, WALL_X_MINUS_OFFSET, WALL_Z_OFFSET, WALL_OFFSET_LEVEL
+    
+    curr_pz = current_printed_z if current_printed_z is not None else top_z
+    operating_z = top_z + WALL_Z_OFFSET
+    
+    X_MIN, X_MAX = -6.0, 235.0
+    Y_MIN, Y_MAX = -2.0, 235.0
+    Z_MIN, Z_MAX = 0.0, 268.0
+    
+    if operating_z > Z_MAX:
+        return gcode
+        
+    if speed is None: speed = 20.0
+    if x_plus_power is None: x_plus_power = 0.2
+    if x_minus_power is None: x_minus_power = 0.2
+    
+    nominal_feedrate = max(1.0, speed) * 60.0
+    min_feedrate = max(1.0, min_speed) * 60.0
+    max_feedrate = max(min_feedrate, max_speed * 60.0)
+    travel_feedrate = 6000.0
+    
+    theta_rad = math.radians(max(5.0, min(85.0, theta_deg)))
+    tan_theta = math.tan(theta_rad)
+    cot_theta = 1.0 / tan_theta
+    
+    retract_amt = min(WALL_MAX_RETRACT, retract_length if retract_length is not None else WALL_RETRACT)
+    
+    # Header metadata for laser_visualizer and calibration_tools
+    gcode.append(f"\n; == [Start chunk: {label}] top_z={top_z:.3f} operating_z={operating_z:.3f} OffsetX1={WALL_X_PLUS_OFFSET:.1f} OffsetX2={WALL_X_MINUS_OFFSET:.1f} OffsetZ={WALL_Z_OFFSET:.1f} level={WALL_OFFSET_LEVEL} ==\n")
+    gcode.append(f"; VOXEL_WALL_SETTINGS: {{\"mode\": \"voxel_raycast\", \"spacing\": {spacing:.2f}, \"theta\": {theta_deg:.1f}, \"overshoot\": {overshoot:.2f}, \"min_speed\": {min_speed:.1f}, \"corner_drop\": {corner_power_drop:.2f}}}\n")
+    
+    # Standby temp & initial retract
+    gcode.append("G91 ; relative\n")
+    gcode.append(f"G1 E-{retract_amt:.1f} F2400 ; [{label}] Initial retract\n")
+    gcode.append("G90 ; absolute\n")
+    
+    if WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
+        target_temp = max(0, CURRENT_PRINT_TEMP - WALL_STANDBY_TEMP_DROP)
+        gcode.append(f"M104 S{target_temp} ; [{label}] Standby temp drop\n")
+        
+    gcode.append(f"G0 Z{operating_z:.3f} F600 ; [{label}] Move to operating Z\n")
+    
+    if not chunk_layers or not layer_outer_walls_map or not layer_z_map:
+        chunk_layers = [0]
+        layer_outer_walls_map = {0: top_segments}
+        layer_z_map = {0: top_z}
+        
+    def find_layer_point_below(tx, ty, tnx, tny, target_layer_idx):
+        segs = layer_outer_walls_map.get(target_layer_idx, [])
+        if not segs:
+            return None
+        best_d2 = 999999.0
+        best_pt = None
+        for bx1, by1, bx2, by2 in segs:
+            bdx = bx2 - bx1
+            bdy = by2 - by1
+            blen = math.hypot(bdx, bdy)
+            if blen < 1e-6:
+                continue
+            bnx = bdy / blen
+            bny = -bdx / blen
+            
+            # Normal alignment check: must face roughly similar direction (dot product > 0.2)
+            if (tnx * bnx + tny * bny) < 0.2:
+                continue
+                
+            l2 = bdx * bdx + bdy * bdy
+            t = max(0.0, min(1.0, ((tx - bx1) * bdx + (ty - by1) * bdy) / l2))
+            px = bx1 + t * bdx
+            py = by1 + t * bdy
+            d2 = (tx - px)**2 + (ty - py)**2
+            if d2 < best_d2:
+                best_d2 = d2
+                best_pt = (px, py, bnx, bny)
+                
+        if best_d2 <= 4.0: # within 2.0 mm layer-to-layer correspondence radius
+            return best_pt
+        return None
+
+    # Step 1: Trace surface columns for each continuous loop on every layer in the chunk
+    sorted_chunk_layers = sorted(chunk_layers, reverse=True) # Top down
+    visited_surface_columns = set()
+    surface_column_paths = []
+    
+    for l_idx in sorted_chunk_layers:
+        lz = layer_z_map.get(l_idx, top_z)
+        layer_segs = layer_outer_walls_map.get(l_idx, [])
+        if not layer_segs:
+            continue
+            
+        paths, _ = build_paths_from_segments(layer_segs)
+        if reverse_path:
+            for i in range(len(paths)):
+                paths[i] = [(seg[2], seg[3], seg[0], seg[1]) for seg in reversed(paths[i])]
+                
+        for path in paths:
+            if not path:
+                continue
+                
+            tagged_columns = []
+            for seg in path:
+                x1, y1, x2, y2 = seg[:4]
+                dx = x2 - x1
+                dy = y2 - y1
+                seg_len = math.hypot(dx, dy)
+                if seg_len < 1e-6:
+                    continue
+                    
+                ndx = dx / seg_len
+                ndy = dy / seg_len
+                nx = ndy
+                ny = -ndx
+                
+                num_samples = max(1, int(round(seg_len / max(0.05, spacing))))
+                step_len = seg_len / num_samples
+                
+                for s_i in range(num_samples):
+                    s_frac = (s_i + 0.5) * step_len
+                    sx = x1 + ndx * s_frac
+                    sy = y1 + ndy * s_frac
+                    
+                    # Avoid duplicate columns if already covered by an upper layer
+                    grid_key = (round(sx, 1), round(sy, 1), l_idx)
+                    if grid_key in visited_surface_columns:
+                        continue
+                    visited_surface_columns.add(grid_key)
+                    
+                    # Determine primary laser side
+                    if nx > 0.05:
+                        side = "PLUS"
+                    elif nx < -0.05:
+                        side = "MINUS"
+                    else:
+                        occ_p = check_3d_sloped_occlusion(sx, sy, lz, "PLUS", tan_theta, chunk_layers, layer_outer_walls_map, layer_z_map)
+                        occ_m = check_3d_sloped_occlusion(sx, sy, lz, "MINUS", tan_theta, chunk_layers, layer_outer_walls_map, layer_z_map)
+                        if not occ_p and occ_m:
+                            side = "PLUS"
+                        elif occ_p and not occ_m:
+                            side = "MINUS"
+                        else:
+                            side = "PLUS" if (y2 > y1) else "MINUS"
+                            
+                    # Trace column downward layer by layer
+                    cur_cx, cur_cy = sx, sy
+                    cur_cnx, cur_cny = nx, ny
+                    bottom_cz = lz
+                    bottom_cx, bottom_cy = sx, sy
+                    
+                    # Reachability / Overhang check:
+                    reachability_factor = (1.0 - math.tan(alpha) * tan_theta) * math.cos(alpha)
+                    
+                    # Feedrate law: F = F_base * |dX_tool / dS|
+                    speed_scale = abs(dx_tool) / max(0.001, ds_surface)
+                    stroke_feedrate = nominal_feedrate * speed_scale
+                    
+                    is_reachable = (reachability_factor > 0.05) and (stroke_feedrate >= min_feedrate * 0.5) and (not is_occluded)
+                    clamped_stroke_feedrate = max(min_feedrate, min(max_feedrate, stroke_feedrate))
+                    
+                    # Corner thermal management
+                    power_eff = base_power
+                    if seg_idx == 0 or seg_idx == len(segs) - 1:
+                        # Sharp entry/exit apex
+                        power_eff = base_power * corner_power_drop
+                        if power_eff < 0.065:
+                            # Clamp at hardware floor and scale speed
+                            speed_boost = 0.065 / max(0.01, power_eff)
+                            clamped_stroke_feedrate = min(max_feedrate, clamped_stroke_feedrate * speed_boost)
+                            power_eff = 0.065
+                    for lower_l in sorted_chunk_layers:
+                        if lower_l >= l_idx:
+                            continue
+                        lower_z = layer_z_map.get(lower_l, bottom_cz - 0.2)
+                        matched = find_layer_point_below(cur_cx, cur_cy, cur_cnx, cur_cny, lower_l)
+                        if matched is not None:
+                            cur_cx, cur_cy, cur_cnx, cur_cny = matched
+                            bottom_cz = lower_z
+                            bottom_cx, bottom_cy = cur_cx, cur_cy
+                            visited_surface_columns.add((round(cur_cx, 1), round(cur_cy, 1), lower_l))
+                        else:
+                            # Feature terminated (e.g. base of chimney on roof)
+                            break
+                            
+                    # Machine coordinates
+                    # Base (Top):
+                    pt_base1_x = max(X_MIN, min(X_MAX, prev_top_x + base_shift))
+                    pt_base1_y = max(Y_MIN, min(Y_MAX, prev_top_y))
+                    # Start / End points of adjacent base moves
+                    s_prev = s_i * step_len
+                    b1_x = x1 + ndx * s_prev
+                    b1_y = y1 + ndy * s_prev
+                    
+                    # Apex (Bottom projected):
+                    pt_apex_x = max(X_MIN, min(X_MAX, mid_top_x + base_shift + dx_tool))
+                    pt_apex_y = max(Y_MIN, min(Y_MAX, mid_top_y + dy_wall))
+                    s_next = (s_i + 1.0) * step_len
+                    b2_x = x1 + ndx * s_next
+                    b2_y = y1 + ndy * s_next
+                    
+                    # Next Base (Top):
+                    pt_base2_x = max(X_MIN, min(X_MAX, end_top_x + base_shift))
+                    pt_base2_y = max(Y_MIN, min(Y_MAX, end_top_y))
+                    col_info = {
+                        "side": side,
+                        "top_x": sx, "top_y": sy, "top_z": lz,
+                        "bot_x": bottom_cx, "bot_y": bottom_cy, "bot_z": bottom_cz,
+                        "b1_x": b1_x, "b1_y": b1_y,
+                        "b2_x": b2_x, "b2_y": b2_y,
+                        "nx": nx, "ny": ny,
+                        "ndx": ndx, "ndy": ndy
+                    }
+                    tagged_columns.append((side, col_info))
+                    
+                    if is_reachable:
+                        if not laser_is_on or abs(current_active_power - power_eff) > 0.005:
+                            gcode.append(f"SET_PIN PIN={pin} VALUE={power_eff:.3f}\n")
+                            laser_is_on = True
+                            current_active_power = power_eff
+                    else:
+                        if laser_is_on:
+                            gcode.append(f"SET_PIN PIN={pin} VALUE=0\n")
+                            laser_is_on = False
+                            
+                    # Move 1: Base -> Apex (Stroke 1)
+                    gcode.append(f"G1 X{pt_apex_x:.3f} Y{pt_apex_y:.3f} F{clamped_stroke_feedrate:.0f}\n")
+                    # Move 2: Apex -> Next Base (Stroke 2)
+                    gcode.append(f"G1 X{pt_base2_x:.3f} Y{pt_base2_y:.3f} F{clamped_stroke_feedrate:.0f}\n")
+            if not tagged_columns:
+                continue
+                
+            # Group into contiguous subpaths by laser side
+            sub_groups = []
+            curr_side, curr_col = tagged_columns[0]
+            curr_group = [curr_col]
+            for side, col in tagged_columns[1:]:
+                if side != curr_side:
+                    sub_groups.append((curr_side, curr_group))
+                    curr_side = side
+                    curr_group = [col]
+                else:
+                    curr_group.append(col)
+            if curr_group:
+                sub_groups.append((curr_side, curr_group))
+                
+            surface_column_paths.extend(sub_groups)
+            
+    # Step 2: Emit G-code for each surface column subpath
+    for side, columns in surface_column_paths:
+        if not columns:
+            continue
+            
+        pin = "laser_pwm1" if side == "PLUS" else "laser_pwm2"
+        base_shift = WALL_X_PLUS_OFFSET if side == "PLUS" else WALL_X_MINUS_OFFSET
+        base_power = x_plus_power if side == "PLUS" else x_minus_power
+        
+        # Travel to subpath start
+        first_col = columns[0]
+        start_tx = max(X_MIN, min(X_MAX, first_col["b1_x"] + base_shift))
+        start_ty = max(Y_MIN, min(Y_MAX, first_col["b1_y"]))
+        
+        # Opposing-laser handover start overshoot
+        if overshoot > 1e-4 and len(columns) > 0:
+            start_tx = max(X_MIN, min(X_MAX, start_tx - first_col["ndx"] * overshoot))
+            start_ty = max(Y_MIN, min(Y_MAX, start_ty - first_col["ndy"] * overshoot))
+                
+        gcode.append(f"G0 X{start_tx:.3f} Y{start_ty:.3f} F{travel_feedrate:.0f}\n")
+        
+        laser_is_on = False
+        current_active_power = 0.0
+        
+        for col_idx, col in enumerate(columns):
+            sx, sy, sz = col["top_x"], col["top_y"], col["top_z"]
+            bx, by, bz = col["bot_x"], col["bot_y"], col["bot_z"]
+            
+            # 3D sloped raycast check at target position
+            is_occluded = check_3d_sloped_occlusion(sx, sy, sz, side, tan_theta, chunk_layers, layer_outer_walls_map, layer_z_map)
+            
+            dz_stroke = max(0.05, sz - bz)
+            dx_wall = bx - sx
+            dy_wall = by - sy
+            
+            # Toolhead displacement:
+            # Laser 1 (+X): sweeps down by moving toolhead in +X (+dz_stroke * cot_theta)
+            # Laser 2 (-X): sweeps down by moving toolhead in -X (-dz_stroke * cot_theta)
+            if side == "PLUS":
+                dx_tool = dx_wall + dz_stroke * cot_theta
+                alpha = math.atan2(dx_wall, dz_stroke)
+            else:
+                dx_tool = dx_wall - dz_stroke * cot_theta
+                alpha = math.atan2(-dx_wall, dz_stroke)
+                
+            ds_surface = math.hypot(dx_wall, dy_wall, dz_stroke)
+            
+            # 3D reachability factor
+            reachability_factor = (1.0 - math.tan(alpha) * tan_theta) * math.cos(alpha)
+            
+            # Feedrate law: F = F_base * |dX_tool / dS|
+            speed_scale = abs(dx_tool) / max(0.001, ds_surface)
+            stroke_feedrate = nominal_feedrate * speed_scale
+            
+            is_reachable = (reachability_factor > 0.02) and (stroke_feedrate >= min_feedrate * 0.3) and (not is_occluded)
+            clamped_stroke_feedrate = max(min_feedrate, min(max_feedrate, stroke_feedrate))
+            
+            # Corner thermal power attenuation
+            power_eff = base_power
+            if col_idx == 0 or col_idx == len(columns) - 1:
+                power_eff = base_power * corner_power_drop
+                if power_eff < 0.065:
+                    speed_boost = 0.065 / max(0.01, power_eff)
+                    clamped_stroke_feedrate = min(max_feedrate, clamped_stroke_feedrate * speed_boost)
+                    power_eff = 0.065
+                    
+            # Opposing-laser handover end overshoot
+            if overshoot > 1e-4 and len(segs) > 0:
+                last_seg = segs[-1]
+                dxL = last_seg[2] - last_seg[0]
+                dyL = last_seg[3] - last_seg[1]
+                lL = math.hypot(dxL, dyL)
+                if lL > 1e-6:
+                    end_tx = max(X_MIN, min(X_MAX, last_seg[2] + base_shift + (dxL / lL) * overshoot))
+                    end_ty = max(Y_MIN, min(Y_MAX, last_seg[3] + (dyL / lL) * overshoot))
+                    gcode.append(f"G1 X{end_tx:.3f} Y{end_ty:.3f} F{nominal_feedrate:.0f}\n")
+            # Machine coordinates:
+            # Base (Top):
+            pt_base1_x = max(X_MIN, min(X_MAX, col["b1_x"] + base_shift))
+            pt_base1_y = max(Y_MIN, min(Y_MAX, col["b1_y"]))
+            
+            # Apex (Bottom): toolhead at machine Z_op sweeps beam down to (bx, by, bz)
+            pt_apex_x = max(X_MIN, min(X_MAX, sx + base_shift + dx_tool))
+            pt_apex_y = max(Y_MIN, min(Y_MAX, by))
+            
+            # Next Base (Top):
+            pt_base2_x = max(X_MIN, min(X_MAX, col["b2_x"] + base_shift))
+            pt_base2_y = max(Y_MIN, min(Y_MAX, col["b2_y"]))
+            
+            if is_reachable:
+                if not laser_is_on or abs(current_active_power - power_eff) > 0.005:
+                    gcode.append(f"SET_PIN PIN={pin} VALUE={power_eff:.3f}\n")
+                    laser_is_on = True
+                    current_active_power = power_eff
+            else:
+                if laser_is_on:
+                    gcode.append(f"SET_PIN PIN={pin} VALUE=0\n")
+                    laser_is_on = False
+                    
+            if laser_is_on:
+                gcode.append(f"SET_PIN PIN={pin} VALUE=0\n")
+                laser_is_on = False
+                
+            # Move 1: Base -> Apex (Stroke 1)
+            gcode.append(f"G1 X{pt_apex_x:.3f} Y{pt_apex_y:.3f} F{clamped_stroke_feedrate:.0f}\n")
+            # Move 2: Apex -> Next Base (Stroke 2)
+            gcode.append(f"G1 X{pt_base2_x:.3f} Y{pt_base2_y:.3f} F{clamped_stroke_feedrate:.0f}\n")
+            
+        # Opposing-laser handover end overshoot
+        if overshoot > 1e-4 and len(columns) > 0:
+            last_col = columns[-1]
+            end_tx = max(X_MIN, min(X_MAX, last_col["b2_x"] + base_shift + last_col["ndx"] * overshoot))
+            end_ty = max(Y_MIN, min(Y_MAX, last_col["b2_y"] + last_col["ndy"] * overshoot))
+            gcode.append(f"G1 X{end_tx:.3f} Y{end_ty:.3f} F{nominal_feedrate:.0f}\n")
+            
+        if laser_is_on:
+            gcode.append(f"SET_PIN PIN={pin} VALUE=0\n")
+            laser_is_on = False
+            
+    # Restore Z and retraction
+    gcode.append(f"G0 Z{curr_pz:.3f} F{travel_feedrate:.0f} ; [{label}] Return to layer Z\n")
+    gcode.append("G91 ; relative\n")
+    gcode.append(f"G1 E{retract_amt:.1f} F2400 ; [{label}] Restore retraction\n")
+    gcode.append("G90 ; absolute\n")
+    
+    if ENABLE_PURGE:
+        gcode.append(f"G0 X{PURGE_X:.1f} Y{PURGE_Y:.1f} F9000 ; Mid-air purge position\n")
+        gcode.append(f"G1 E{getattr(globals(), 'PURGE_EXTRA', 20.0):.1f} F300 ; Mid-air purge prime\n")
+        
+    if WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
+        gcode.append(f"M109 S{CURRENT_PRINT_TEMP} ; [{label}] Restore print temp and wait\n")
+        
+    gcode.append(f"; == [{label}] End ==\n\n")
+    return gcode
+
+
 
 def split_corners_in_paths(paths, corner_dist, power_scaler, path_is_hole=None):
     if corner_dist <= 0.0 or power_scaler >= 1.0:
@@ -1002,332 +1772,6 @@ def split_corners_in_paths(paths, corner_dist, power_scaler, path_is_hole=None):
     return new_paths
 
 
-def generate_deep_wobble_passes(chunk_map, chunk_z_map, chunk_layers, top_segments, current_z, z_drop, speed, passes_count, x_plus_power, x_minus_power, angle_tol, reverse_path=False, reverse_wobble=False, overshoot=0.0):
-    import math
-    gcode = []
-    if not top_segments or z_drop <= 0:
-        return gcode
-        
-    global WALL_RETRACT, WALL_MAX_RETRACT, WALL_DEEP_MODE
-    global WALL_X_PLUS_OFFSET, WALL_X_MINUS_OFFSET, WALL_Z_OFFSET, WALL_DEEP_WOBBLE_SPACING, WALL_DEEP_WOBBLE_CORNER_DISTANCE, WALL_DEEP_WOBBLE_CORNER_POWER_DROP
-    global WALL_STANDBY_TEMP_DROP, CURRENT_PRINT_TEMP, ENABLE_PURGE, PURGE_X, PURGE_Y
-    
-    mode_str = f"DeepMode:{WALL_DEEP_MODE} - Wobble"
-    top_layer = chunk_layers[-1] if chunk_layers else 0
-    gcode.append(f"\n; == [Wall Smooth] Start (Layer {top_layer}) - {mode_str} Z Drop:{z_drop:.2f}mm OffsetX1:{WALL_X_PLUS_OFFSET:.2f} OffsetX2:{WALL_X_MINUS_OFFSET:.2f} OffsetZ:{WALL_Z_OFFSET:.2f} ==\n")
-    gcode.append("G91 ; relative\n")
-    initial_retract = min(WALL_RETRACT, WALL_MAX_RETRACT)
-    gcode.append(f"G1 E-{initial_retract:.1f} F2400 ; [Wall Smooth] batch retract\n")
-    gcode.append("G90 ; absolute\n")
-    
-    if WALL_DEEP_MODE and WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
-        target_temp = max(0, CURRENT_PRINT_TEMP - WALL_STANDBY_TEMP_DROP)
-        gcode.append(f"M104 S{target_temp} ; [Wall Smooth] Standby temp drop\n")
-        if ENABLE_PURGE:
-            gcode.append(f"G0 Z{current_z + 2.8:.3f} F600 ; z-hop for travel to purge bucket\n")
-            gcode.append(f"G0 X{PURGE_X:.3f} Y{PURGE_Y:.3f} F6000 ; move to purge bucket for cooldown\n")
-            gcode.append("M106 S255 ; blast fan to cool nozzle faster\n")
-            gcode.append("G4 P10000 ; dwell 10 seconds\n")
-            gcode.append("M107 ; shut off fan during smoothing\n")
-        else:
-            gcode.append("M106 S255 ; blast fan to cool nozzle faster\n")
-            gcode.append("G4 P10000 ; dwell 10 seconds\n")
-            gcode.append("M107 ; shut off fan during smoothing\n")
-            
-    target_z = current_z + WALL_Z_OFFSET
-    gcode.append(f"G0 Z{target_z:.3f} F300 ; Raise nozzle for laser focal offset\n")
-        
-    f_val = speed * 60.0
-    
-    paths, path_is_hole = build_paths_from_segments(top_segments)
-    
-    if reverse_path:
-        for i in range(len(paths)):
-            paths[i] = [(seg[2], seg[3], seg[0], seg[1]) for seg in reversed(paths[i])]
-            
-    cleaned_paths = []
-    for path in paths:
-        if len(path) > 1:
-            first_seg = path[0]
-            last_seg = path[-1]
-            d_first = math.hypot(first_seg[2]-first_seg[0], first_seg[3]-first_seg[1])
-            d_last = math.hypot(last_seg[2]-last_seg[0], last_seg[3]-last_seg[1])
-            if d_first > 0.01 and d_last > 0.01:
-                nx1 = (first_seg[2]-first_seg[0])/d_first
-                ny1 = (first_seg[3]-first_seg[1])/d_first
-                nx2 = (last_seg[2]-last_seg[0])/d_last
-                ny2 = (last_seg[3]-last_seg[1])/d_last
-                if (nx1*nx2 + ny1*ny2) > 0.95 and d_last < 5.0:
-                    path = path[:-1]
-        cleaned_paths.append(path)
-        
-    # Re-integrate corner drops for wobble sweeps
-    cleaned_paths = split_corners_in_paths(cleaned_paths, WALL_DEEP_WOBBLE_CORNER_DISTANCE, WALL_DEEP_WOBBLE_CORNER_POWER_DROP, path_is_hole)
-    laser_split_paths = []
-    for path_idx, path in enumerate(cleaned_paths):
-        
-        curr_loop_split_paths = []
-        curr_sub_path = []
-        curr_laser = None
-        for seg in path:
-            x1, y1, x2, y2 = seg[:4]
-            dy = y2 - y1
-            
-            if len(seg) > 5:
-                laser_dir_seg = seg[5]
-            else:
-                if abs(dy) < 0.01:
-                    laser_dir_seg = curr_laser if curr_laser else "PLUS"
-                else:
-                    nx = dy
-                    if nx > abs(x2 - x1) * 0.1:
-                        laser_dir_seg = "PLUS"
-                    elif nx < -abs(x2 - x1) * 0.1:
-                        laser_dir_seg = "MINUS"
-                    else:
-                        laser_dir_seg = curr_laser if curr_laser else "PLUS"
-                    
-            norm_seg = list(seg)
-            if len(norm_seg) == 4: norm_seg.append(1.0)
-            if len(norm_seg) == 5: norm_seg.append(laser_dir_seg)
-            else: norm_seg[5] = laser_dir_seg
-            
-            if curr_laser is None:
-                curr_laser = laser_dir_seg
-                curr_sub_path.append(tuple(norm_seg))
-            elif curr_laser == laser_dir_seg:
-                curr_sub_path.append(tuple(norm_seg))
-            else:
-                curr_loop_split_paths.append((curr_laser, curr_sub_path))
-                curr_sub_path = [tuple(norm_seg)]
-                curr_laser = laser_dir_seg
-        if curr_sub_path:
-            curr_loop_split_paths.append((curr_laser, curr_sub_path))
-            
-        if overshoot > 0:
-            is_closed_loop = False
-            if len(path) > 2:
-                path_len = sum(math.hypot(s[2]-s[0], s[3]-s[1]) for s in path)
-                is_closed_loop = (path_len > 5.0 and math.hypot(path[-1][2] - path[0][0], path[-1][3] - path[0][1]) < 1.0)
-                
-            for i, (laser, sp) in enumerate(curr_loop_split_paths):
-                if len(sp) == 0: continue
-                
-                should_overshoot_start = False
-                if i > 0:
-                    should_overshoot_start = True
-                elif is_closed_loop and len(curr_loop_split_paths) > 1:
-                    if curr_loop_split_paths[-1][0] != laser:
-                        should_overshoot_start = True
-                        
-                should_overshoot_end = False
-                if i < len(curr_loop_split_paths) - 1:
-                    should_overshoot_end = True
-                elif is_closed_loop and len(curr_loop_split_paths) > 1:
-                    if curr_loop_split_paths[0][0] != laser:
-                        should_overshoot_end = True
-                        
-                if should_overshoot_start:
-                    f_seg = list(sp[0])
-                    dx = f_seg[2] - f_seg[0]
-                    dy = f_seg[3] - f_seg[1]
-                    l = math.hypot(dx, dy)
-                    if l > 0.001:
-                        f_seg[0] = f_seg[0] - (dx/l) * overshoot
-                        f_seg[1] = f_seg[1] - (dy/l) * overshoot
-                        sp[0] = tuple(f_seg)
-                        
-                if should_overshoot_end:
-                    l_seg = list(sp[-1])
-                    dx = l_seg[2] - l_seg[0]
-                    dy = l_seg[3] - l_seg[1]
-                    l = math.hypot(dx, dy)
-                    if l > 0.001:
-                        l_seg[2] = l_seg[2] + (dx/l) * overshoot
-                        l_seg[3] = l_seg[3] + (dy/l) * overshoot
-                        sp[-1] = tuple(l_seg)
-                        
-        for laser, sp in curr_loop_split_paths:
-            laser_split_paths.append(sp)
-                    
-    if WALL_WOBBLE_PULL_ONLY:
-        final_paths = []
-        for sp in laser_split_paths:
-            if not sp: continue
-            
-            current_normal_stroke = []
-            push_group = []
-            laser_dir_seg = sp[0][5]
-            
-            for seg in sp:
-                x1, y1, x2, y2 = seg[:4]
-                dx = x2 - x1
-                should_reverse = False
-                if laser_dir_seg == "PLUS" and dx < -0.001:
-                    should_reverse = True
-                elif laser_dir_seg == "MINUS" and dx > 0.001:
-                    should_reverse = True
-                    
-                if should_reverse:
-                    if current_normal_stroke:
-                        final_paths.append(current_normal_stroke)
-                        current_normal_stroke = []
-                        
-                    rev_seg = list(seg)
-                    rev_seg[0], rev_seg[1], rev_seg[2], rev_seg[3] = x2, y2, x1, y1
-                    push_group.append(tuple(rev_seg))
-                else:
-                    if push_group:
-                        final_paths.append(list(reversed(push_group)))
-                        push_group = []
-                    current_normal_stroke.append(seg)
-                    
-            if current_normal_stroke:
-                final_paths.append(current_normal_stroke)
-            if push_group:
-                final_paths.append(list(reversed(push_group)))
-        laser_split_paths = final_paths
-
-    cleaned_paths = laser_split_paths
-
-        
-    x_plus_ratio = WALL_X_PLUS_OFFSET / WALL_Z_OFFSET if WALL_Z_OFFSET != 0 else 0
-    x_minus_ratio = WALL_X_MINUS_OFFSET / WALL_Z_OFFSET if WALL_Z_OFFSET != 0 else 0
-    
-    target_z_base = chunk_z_map.get(chunk_layers[-1], current_z)
-    target_z = target_z_base + WALL_Z_OFFSET
-    z_wobble_dist = z_drop
-
-    for pass_idx in range(passes_count):
-        gcode.append(f"\n; == [Wobble Pass {pass_idx+1}/{passes_count}] Start ==\n")
-        gcode.append(f"G0 Z{target_z:.3f} F600 ; [Wobble] Drop to seam layer\n")
-        
-        for path_idx, path in enumerate(cleaned_paths):
-            curr_laser = None
-            curr_power = None
-            last_ex = None
-            last_ey = None
-
-            for pt_idx in range(len(path)):
-                seg = path[pt_idx]
-                x1, y1, x2, y2 = seg[:4]
-                power_factor = seg[4] if len(seg) > 4 else 1.0
-                
-                dx, dy = x2 - x1, y2 - y1
-                segment_len = math.hypot(dx, dy)
-                if segment_len < 0.001: continue
-                
-                angle = math.degrees(math.atan2(abs(x2 - x1), abs(dy)))
-                if angle > angle_tol:
-                    if curr_laser is not None:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                        curr_laser = None
-                    continue
-                
-                laser_dir = seg[5]
-                
-                base_shift = WALL_X_PLUS_OFFSET if laser_dir == "PLUS" else WALL_X_MINUS_OFFSET
-                ratio = x_plus_ratio if laser_dir == "PLUS" else x_minus_ratio
-                power = (x_plus_power if laser_dir == "PLUS" else x_minus_power) * power_factor
-                
-                ndx = dx / segment_len
-                ndy = dy / segment_len
-                
-                num_wobbles = int(segment_len / max(0.01, WALL_DEEP_WOBBLE_SPACING))
-                if num_wobbles < 1: num_wobbles = 1
-                step_len = segment_len / num_wobbles
-                
-                start_nx = x1 + base_shift
-                
-                if pass_idx > 0 or (last_ex is not None and last_ey is not None):
-                    if last_ex is not None and last_ey is not None:
-                        dist_back = math.hypot(start_nx - last_ex, y1 - last_ey)
-                        if dist_back > 1.0:
-                            if curr_laser is not None:
-                                gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                                curr_laser = None
-                            gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                        else:
-                            gcode.append(f"G1 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                    else:
-                        gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                else:
-                    gcode.append(f"G0 X{start_nx:.3f} Y{y1:.3f} F6000\n")
-                
-                pin = "laser_pwm1" if laser_dir == "PLUS" else "laser_pwm2"
-                if curr_laser != pin or curr_power is None or abs(curr_power - power) > 0.001:
-                    if curr_laser is not None and curr_laser != pin:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                    if power >= 0.01:
-                        gcode.append(f"SET_PIN PIN={pin} VALUE={power:.3f}\n")
-                    curr_laser = pin
-                    curr_power = power
-                
-                if power < 0.01:
-                    if curr_laser is not None:
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                        curr_laser = None
-                
-                base_wobble_amplitude_x = z_wobble_dist * ratio * WALL_WOBBLE_PROJECTION_FACTOR
-
-                for i in range(num_wobbles):
-                    if WALL_WOBBLE_PULL_ONLY and not WALL_WOBBLE_PULL_CONTINUOUS:
-                        current_perp_x = base_wobble_amplitude_x
-                        current_perp_y = 0.0
-                        
-                        pt_base_x = x1 + ndx * (i * step_len) + base_shift
-                        pt_base_y = y1 + ndy * (i * step_len)
-                        
-                        pt_peak_x = pt_base_x + current_perp_x
-                        pt_peak_y = pt_base_y + current_perp_y
-                        
-                        if curr_laser is not None:
-                            gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-                            curr_laser = None
-                        gcode.append(f"G0 X{pt_base_x:.3f} Y{pt_base_y:.3f} F6000\n")
-                        
-                        curr_laser = "laser_pwm1" if laser_dir == "PLUS" else "laser_pwm2"
-                        gcode.append(f"SET_PIN PIN={curr_laser} VALUE={power:.3f}\n")
-                        gcode.append(f"G1 X{pt_peak_x:.3f} Y{pt_peak_y:.3f} F{f_val}\n")
-                    else:
-                        is_out = (i % 2 == 0)
-                        if reverse_wobble:
-                            is_out = not is_out
-                        current_perp_x = base_wobble_amplitude_x if is_out else 0.0
-                        current_perp_y = 0.0
-                        
-                        pt_base_x = x1 + ndx * (i * step_len) + base_shift
-                        pt_base_y = y1 + ndy * (i * step_len)
-                        
-                        pt_peak_x = pt_base_x + current_perp_x
-                        pt_peak_y = pt_base_y + current_perp_y
-                        
-                        gcode.append(f"G1 X{pt_peak_x:.3f} Y{pt_peak_y:.3f} F{f_val}\n")
-                        
-                        pt_next_base_x = x1 + ndx * ((i+1) * step_len) + base_shift
-                        pt_next_base_y = y1 + ndy * ((i+1) * step_len)
-                        
-                        pt_next_peak_x = pt_next_base_x + current_perp_x
-                        pt_next_peak_y = pt_next_base_y + current_perp_y
-                        
-                        gcode.append(f"G1 X{pt_next_peak_x:.3f} Y{pt_next_peak_y:.3f} F{f_val}\n")
-                    
-                pt_final_base_x = x1 + ndx * (num_wobbles * step_len) + base_shift
-                pt_final_base_y = y1 + ndy * (num_wobbles * step_len)
-                gcode.append(f"G1 X{pt_final_base_x:.3f} Y{pt_final_base_y:.3f} F{f_val}\n")
-                
-                last_ex = pt_final_base_x
-                last_ey = pt_final_base_y
-                    
-            if curr_laser is not None:
-                gcode.append(f"SET_PIN PIN={curr_laser} VALUE=0\n")
-            
-    gcode.append(f"G0 Z{current_z:.3f} F600 ; [Wobble] Return to layer Z\n")
-    if WALL_DEEP_MODE and WALL_STANDBY_TEMP_DROP > 0 and CURRENT_PRINT_TEMP > 0:
-        gcode.append(f"M109 S{CURRENT_PRINT_TEMP} ; [Wall Smooth] Restore print temp and wait\n")
-    gcode.append(f"; == [Wall Smooth] End == RETRACT={initial_retract:.1f}\n\n")
-    return gcode
-
 def generate_wall_smooth_passes(wall_segments, prev_segments, next_segments, current_z, prev_z, layer_idx, accumulated_layers, speed, passes_count, x_plus_power, x_minus_power, overhang_plus_power, overhang_minus_power, angle_tol, is_final_layer=False, force_trigger=False, max_sweep_layers=None, layer_outer_walls_map=None, restore_z=None, reverse_path=False):
     """
     Generate G-code for wall smoothing passes. Handles overhang detection and Deep Mode (multi-Z).
@@ -1338,6 +1782,7 @@ def generate_wall_smooth_passes(wall_segments, prev_segments, next_segments, cur
     if not wall_segments and not prev_segments:
         return gcode
         
+    global WALL_DEEP_DELAY_PASSES
     f_val = speed * 60.0
     
     def extract_laser_paths(segments, min_area=0.0):
@@ -1362,6 +1807,8 @@ def generate_wall_smooth_passes(wall_segments, prev_segments, next_segments, cur
             if path_area < min_area:
                 continue
                 
+            is_ccw = area_sum > 0
+            is_hole = _path_is_hole[path_idx]
             air_on_right = (not is_ccw) if is_hole else is_ccw
             
             _curr_straight = []
@@ -1726,11 +2173,19 @@ def generate_wall_smooth_passes(wall_segments, prev_segments, next_segments, cur
                     
         # (Duplicate z_batch block removed — was re-adding straight_passes with safety_layers=0,
         #  creating unwanted extra strokes in the safety zone near the nozzle.)
+    else:
+        passes = []
+        if straight_passes:
+            passes.extend(straight_passes)
+        if overhang_passes:
+            passes.extend(overhang_passes)
+        if passes:
+            z_batches.append( (current_z, passes) )
                 
     if not z_batches:
         return gcode
     mode_str = f"DeepMode:{WALL_DEEP_MODE}"
-    if WALL_MODE_PASS1 == 'wobble' or WALL_MODE_PASS2 == 'wobble':
+    if WALL_MODE_PASS1 in ['wobble', 'voxel', 'voxel_wobble'] or WALL_MODE_PASS2 in ['wobble', 'voxel', 'voxel_wobble']:
         mode_str += " - Wobble"
     gcode.append(f"\n; == [Wall Smooth] Start (Layer {layer_idx}) - {mode_str} ==\n")
     gcode.append("G91 ; relative\n")
@@ -1957,183 +2412,6 @@ def generate_wall_smooth_passes(wall_segments, prev_segments, next_segments, cur
     gcode.append(f"; == [Wall Smooth] End == RETRACT={total_retracted:.1f}\n\n")
     return gcode
 
-def generate_laser_rivets(bbox, cx, cy, angle_deg, power, dwell_ms, z_hop, spacing, laser_pin="laser_pwm1", offset_x=0.0, offset_y=0.0, fan_speed=0, wobble_radius=0.0, wobble_turns=1, wobble_max_speed=250.0, pulse_period=0, pulse_duty=0.5, cluster=None, boolean_res=0.2, wall_expansion=0.45):
-    """
-    Generate G-code for stationary laser pulses (rivets) over a bounding box.
-    Supports continuous wobble, stationary pulsing, or combined dashed-circle wobble.
-    """
-    min_x, min_y, max_x, max_y = bbox
-    gcode = []
-    
-    bool_grid = None
-    res = boolean_res
-    if cluster and len(cluster) > 0:
-        bool_grid = build_boolean_grid(cluster, res, max_dist=wall_expansion)
-    
-    import math
-    rad = math.radians(angle_deg)
-    cos_a = math.cos(rad)
-    sin_a = math.sin(rad)
-
-    def rot(lx, ly):
-        nx = cos_a * lx - sin_a * ly + cx
-        ny = sin_a * lx + cos_a * ly + cy
-        return nx, ny
-
-    # Bounds check function
-    def validate_bounds(tx, ty):
-        if not (X_MIN <= tx <= X_MAX and Y_MIN <= ty <= Y_MAX):
-            raise ValueError(
-                f"\n\n======================================================\n"
-                f"ERROR: Rivet path exceeds motion limits!\n"
-                f"Target position X:{tx:.2f}, Y:{ty:.2f} is out of bounds.\n"
-                f"Motion limits -> X:[{X_MIN}, {X_MAX}], Y:[{Y_MIN}, {Y_MAX}]\n"
-                f"This happened because of the laser offset (X:{offset_x}, Y:{offset_y}).\n"
-                f"Please move your part closer to the center of the build plate.\n"
-                f"======================================================\n"
-            )
-
-    gcode.append(f"\n; == [Rivet] Start - Spacing {spacing}mm, Power {power}, Dwell {dwell_ms}ms ==\n")
-    if pulse_period > 0:
-        gcode.append(f"; [Rivet] Pulsing enabled: {pulse_period}ms period, {pulse_duty} duty cycle\n")
-    if wobble_radius > 0:
-        gcode.append(f"; [Rivet] Wobble enabled: {wobble_radius}mm radius\n")
-    
-    # -- Retract and Z-hop --
-    gcode.append(f"SET_PIN PIN=laser_pwm1 VALUE=0\nSET_PIN PIN=laser_pwm2 VALUE=0\nSET_PIN PIN=laser_pwm3 VALUE=0 ; [Rivet] safety off\n")
-    gcode.append("G91 ; relative\n")
-    gcode.append("G1 E-5.0 F2400 ; [Rivet] retract\n")
-    gcode.append(f"G1 Z{z_hop:.2f} F600 ; [Rivet] Z hop\n")
-    gcode.append("G90 ; absolute\n")
-    if fan_speed > 0:
-        gcode.append(f"M106 S{int(fan_speed)} ; [Rivet] Set fan speed\n")
-    
-    count = 0
-    width = max_x - min_x
-    height = max_y - min_y
-    
-    nx = max(1, int((width + 0.001) // spacing) + 1)
-    ny = max(1, int((height + 0.001) // spacing) + 1)
-    
-    start_x = min_x + (width - (nx - 1) * spacing) / 2.0
-    start_y = min_y + (height - (ny - 1) * spacing) / 2.0
-    
-    for j in range(ny):
-        y = start_y + j * spacing
-        for i in range(nx):
-            x = start_x + i * spacing
-            rx, ry = rot(x, y)
-            
-            if bool_grid:
-                if (int(rx / res), int(ry / res)) not in bool_grid:
-                    x += spacing
-                    continue
-                    
-            tx, ty = rx + offset_x, ry + offset_y
-            validate_bounds(tx, ty)
-            
-            # Move to rivet center
-            gcode.append(f"G0 X{tx:.3f} Y{ty:.3f} F6000 ; [Rivet] move to position\n")
-            gcode.append("M400 ; Wait for moves to finish before firing\n")
-            
-            if wobble_radius > 0 and pulse_period == 0:
-                # Scenario B: Wobble Only (Continuous Laser)
-                actual_turns = wobble_turns
-                perimeter = 2 * math.pi * wobble_radius * actual_turns
-                feedrate = (perimeter / (dwell_ms / 1000.0)) * 60.0
-                
-                if feedrate > wobble_max_speed * 60.0:
-                    actual_turns = (wobble_max_speed * (dwell_ms / 1000.0)) / (2 * math.pi * wobble_radius)
-                    feedrate = wobble_max_speed * 60.0
-                
-                total_angle = 2 * math.pi * actual_turns
-                total_edges = max(1, int(math.ceil(8 * actual_turns)))
-                
-                # Move to start of path
-                sx = tx + wobble_radius
-                sy = ty
-                gcode.append(f"G0 X{sx:.3f} Y{sy:.3f} F6000\n")
-                gcode.append(f"SET_PIN PIN={laser_pin} VALUE={power:.3f} ; [Rivet] ON\n")
-                
-                for i in range(1, total_edges + 1):
-                    angle = i * (total_angle / total_edges)
-                    px = tx + wobble_radius * math.cos(angle)
-                    py = ty + wobble_radius * math.sin(angle)
-                    gcode.append(f"G1 X{px:.3f} Y{py:.3f} F{feedrate:.1f}\n")
-                
-                gcode.append(f"SET_PIN PIN={laser_pin} VALUE=0 ; [Rivet] OFF\n")
-                
-            elif wobble_radius == 0 and pulse_period > 0:
-                # Scenario A: Pulsing Only (Stationary)
-                cycles = max(1, int(dwell_ms / pulse_period))
-                on_time = int(pulse_period * pulse_duty)
-                off_time = int(pulse_period * (1.0 - pulse_duty))
-                for _ in range(cycles):
-                    gcode.append(f"SET_PIN PIN={laser_pin} VALUE={power:.3f}\n")
-                    gcode.append(f"G4 P{on_time}\n")
-                    gcode.append(f"SET_PIN PIN={laser_pin} VALUE=0\n")
-                    gcode.append(f"G4 P{off_time}\n")
-                    
-            elif wobble_radius > 0 and pulse_period > 0:
-                # Scenario C: Pulsing + Wobble (Dashed Circle)
-                actual_turns = wobble_turns
-                perimeter = 2 * math.pi * wobble_radius * actual_turns
-                feedrate = (perimeter / (dwell_ms / 1000.0)) * 60.0
-                
-                if feedrate > wobble_max_speed * 60.0:
-                    actual_turns = (wobble_max_speed * (dwell_ms / 1000.0)) / (2 * math.pi * wobble_radius)
-                    feedrate = wobble_max_speed * 60.0
-                
-                total_angle = 2 * math.pi * actual_turns
-                cycles = max(1, int(dwell_ms / pulse_period))
-                edges = min(cycles, max(1, int(50 * actual_turns))) # Cap edges to protect buffer
-                
-                sx = tx + wobble_radius
-                sy = ty
-                gcode.append(f"G0 X{sx:.3f} Y{sy:.3f} F6000\n")
-                
-                for i in range(1, edges + 1):
-                    # Each edge corresponds to one pulse period
-                    # Start angle
-                    a1 = (i - 1) * (total_angle / edges)
-                    # End angle
-                    a2 = i * (total_angle / edges)
-                    # Mid angle (where the laser turns off based on duty cycle)
-                    mid_angle = a1 + (a2 - a1) * pulse_duty
-                    
-                    mx = tx + wobble_radius * math.cos(mid_angle)
-                    my = ty + wobble_radius * math.sin(mid_angle)
-                    
-                    ex = tx + wobble_radius * math.cos(a2)
-                    ey = ty + wobble_radius * math.sin(a2)
-                    
-                    gcode.append(f"SET_PIN PIN={laser_pin} VALUE={power:.3f}\n")
-                    gcode.append(f"G1 X{mx:.3f} Y{my:.3f} F{feedrate:.1f}\n")
-                    gcode.append(f"SET_PIN PIN={laser_pin} VALUE=0\n")
-                    gcode.append(f"G1 X{ex:.3f} Y{ey:.3f} F{feedrate:.1f}\n")
-                    
-            else:
-                # Original Stationary
-                gcode.append(f"SET_PIN PIN={laser_pin} VALUE={power:.3f} ; [Rivet] ON\n")
-                gcode.append(f"G4 P{int(dwell_ms)} ; [Rivet] Dwell\n")
-                gcode.append(f"SET_PIN PIN={laser_pin} VALUE=0 ; [Rivet] OFF\n")
-            
-            count += 1
-
-
-    # -- Undo Z-hop and unretract --
-    if fan_speed > 0:
-        gcode.append(f"M107 ; [Rivet] Turn off fan\n")
-    gcode.append("G91 ; relative\n")
-    gcode.append(f"G1 Z-{z_hop:.2f} F600 ; [Rivet] undo Z hop\n")
-    gcode.append(f"G1 E5.0 F2400 ; [Rivet] unretract\n")
-    gcode.append("G90 ; absolute\n")
-    
-    gcode.append(f"; == [Rivet] End - {count} rivets placed ==\n\n")
-    
-    return gcode
-
-
 def generate_laser_connectivity(bbox, cx, cy, power, speed, z_hop, laser_pin="laser_pwm3", offset_x=0.0, offset_y=0.0, fan_speed=0, pass2_power=0.0, pass2_speed=0.0, passes=2, num_sublines=3, subline_spacing=0.2):
     """
     Generate G-code for connectivity/cabling trace lines over a bounding box.
@@ -2345,7 +2623,7 @@ def process_gcode(file_path, args=None):
     layer_top_surfaces_map = extract_top_surfaces(lines)
     max_layer_global = max(layer_outer_walls_map.keys()) if layer_outer_walls_map else 0
 
-    global PREHEAT_POWER, SMOOTH_POWER, ANNEAL_POWER, RIVET_POWER, RIVET_TIME, WALL_DEEP_IGNORE_OVERHANG_LENGTH
+    global PREHEAT_POWER, SMOOTH_POWER, ANNEAL_POWER, WALL_DEEP_IGNORE_OVERHANG_LENGTH
 
     out_lines = []
     
@@ -2374,7 +2652,7 @@ def process_gcode(file_path, args=None):
     chunk_start_segments = []
 
     def apply_sweep(z):
-        global PREHEAT_POWER, SMOOTH_POWER, ANNEAL_POWER, RIVET_POWER, RIVET_TIME, WALL_DEEP_IGNORE_OVERHANG_LENGTH
+        global PREHEAT_POWER, SMOOTH_POWER, ANNEAL_POWER, WALL_DEEP_IGNORE_OVERHANG_LENGTH
         if not SWEEP_FEATURE:
             return
         z_clamped = max(SWEEP_START_Z, min(SWEEP_END_Z, z))
@@ -2390,11 +2668,7 @@ def process_gcode(file_path, args=None):
             SMOOTH_POWER = val
         elif SWEEP_FEATURE == "anneal-power":
             ANNEAL_POWER = val
-        elif SWEEP_FEATURE == "rivet-power":
-            RIVET_POWER = val
-        elif SWEEP_FEATURE == "rivet-time":
-            RIVET_TIME = int(val)
-
+            
     # Points collected for end-of-layer passes
     top_surface_points = []   # (x, y) coords printed as "Top surface"
     layer_points = []         # (x, y) coords of all extrusion moves on this layer
@@ -2402,6 +2676,7 @@ def process_gcode(file_path, args=None):
     outer_wall_segments = []  # (x1, y1, x2, y2) of "Outer wall" extrusion moves
     prev_outer_wall_segments = [] # Previous layer's outer wall for overhang detection
     prev_z = None             # Previous layer's Z height
+    prev_layer_was_overhang = False
 
     # Stats counters
     stats = {
@@ -2409,7 +2684,6 @@ def process_gcode(file_path, args=None):
         "smooth_passes": 0,
         "anneal_passes": 0,
         "wall_smooth_layers": 0,
-        "rivet_layers": 0,
     }
 
     def inject_end_of_layer_passes(is_final_layer=False):
@@ -2418,10 +2692,11 @@ def process_gcode(file_path, args=None):
         nonlocal last_chunk_end_layer
         nonlocal unswept_layers, layer_z_map
         nonlocal active_slope_groups
+        nonlocal prev_layer_was_overhang
         
         injected = []
 
-        if delayed_deep_passes_queue and current_layer >= delayed_deep_passes_trigger_layer:
+        if delayed_deep_passes_queue and (is_final_layer or current_layer >= delayed_deep_passes_trigger_layer):
             injected.extend(delayed_deep_passes_queue)
             delayed_deep_passes_queue = []
 
@@ -2431,16 +2706,17 @@ def process_gcode(file_path, args=None):
             last_pwm1 = 0.0
             last_pwm2 = 0.0
 
-        if outer_wall_segments:
-            layer_z_map[current_layer] = current_z
-            if WALL_MAX_LAYER_SAFETY > 0 and max_layer_global > 0 and current_layer > max_layer_global - WALL_MAX_LAYER_SAFETY:
-                pass # Skip adding to unswept_layers for top layer safety
-            else:
-                unswept_layers.append(current_layer)
+        if WALL_SMOOTH_ENABLED and (outer_wall_segments or (is_final_layer and unswept_layers)):
+            if outer_wall_segments:
+                layer_z_map[current_layer] = current_z
+                if WALL_MAX_LAYER_SAFETY > 0 and max_layer_global > 0 and current_layer > max_layer_global - WALL_MAX_LAYER_SAFETY:
+                    pass # Skip adding to unswept_layers for top layer safety
+                else:
+                    unswept_layers.append(current_layer)
 
             # Check for physical overhang/bridge boundary
             is_boundary = False
-            if WALL_SMOOTH_ENABLED and WALL_DEEP_MODE and len(unswept_layers) > 1:
+            if not is_final_layer and WALL_SMOOTH_ENABLED and WALL_DEEP_MODE and len(unswept_layers) > 1:
                 cur_segs = outer_wall_segments
                 prev_segs = layer_outer_walls_map.get(current_layer - 1, [])
                 if cur_segs and prev_segs:
@@ -2475,15 +2751,51 @@ def process_gcode(file_path, args=None):
                         if is_outside and angle > WALL_DEEP_OVERHANG_ANGLE:
                             overhang_len += _math.hypot(cx2-cx1, cy2-cy1)
                             
-                    if overhang_len > WALL_DEEP_IGNORE_OVERHANG_LENGTH:
+                    cur_is_overhang = (overhang_len > WALL_DEEP_IGNORE_OVERHANG_LENGTH)
+                    if cur_is_overhang and not prev_layer_was_overhang:
                         is_boundary = True
+                    prev_layer_was_overhang = cur_is_overhang
 
-
+            # Smart Island Chunking: Detect if perimeter loops split/merge (e.g. head to ears)
+            # or if any perimeter island on current layer terminates or caps off on the layer above
+            if WALL_WOBBLE_SMART_CHUNKING and len(unswept_layers) > 1 and not is_boundary:
+                cur_segs = outer_wall_segments
+                next_segs = layer_outer_walls_map.get(current_layer + 1, [])
+                if cur_segs and not next_segs:
+                    is_boundary = True
+                elif cur_segs and next_segs:
+                    import math as _math
+                    cur_paths, _ = build_paths_from_segments(cur_segs)
+                    next_paths, _ = build_paths_from_segments(next_segs)
+                    
+                    cur_valid = [p for p in cur_paths if sum(_math.hypot(s[2]-s[0], s[3]-s[1]) for s in p) >= 15.0]
+                    next_valid = [p for p in next_paths if sum(_math.hypot(s[2]-s[0], s[3]-s[1]) for s in p) >= 15.0]
+                    
+                    # Split chunk if major loop count changes persistently (e.g. 1 head loop becomes 2 ear loops)
+                    next_next_segs = layer_outer_walls_map.get(current_layer + 2, [])
+                    next_next_paths, _ = build_paths_from_segments(next_next_segs) if next_next_segs else ([], None)
+                    next_next_valid = [p for p in next_next_paths if sum(_math.hypot(s[2]-s[0], s[3]-s[1]) for s in p) >= 15.0]
+                    
+                    if len(cur_valid) != len(next_valid) and (len(next_valid) == len(next_next_valid) or not next_next_valid) and (len(cur_valid) > 0 or len(next_valid) > 0):
+                        is_boundary = True
+                    else:
+                        for cp in cur_valid:
+                            pts = [(s[0], s[1]) for s in cp]
+                            covered = 0
+                            for px, py in pts:
+                                for ns in next_segs:
+                                    if _math.hypot(px-ns[0], py-ns[1]) < 3.0 or _math.hypot(px-ns[2], py-ns[3]) < 3.0:
+                                        covered += 1
+                                        break
+                            cov_ratio = covered / max(1, len(pts))
+                            if cov_ratio < 0.5:
+                                is_boundary = True
+                                break
 
             def do_sweep(chunk_layers, ignore_safety=False):
                 if not chunk_layers: return []
                 
-                safety = 0 if (is_final_layer or ignore_safety) else WALL_DEEP_SAFETY
+                safety = 0 if (is_final_layer or ignore_safety or not WALL_DEEP_MODE) else WALL_DEEP_SAFETY
                 if safety > 0:
                     if len(chunk_layers) <= safety:
                         return []
@@ -2496,7 +2808,80 @@ def process_gcode(file_path, args=None):
                     reverse_path_flag = is_pass2 and WALL_PASS2_REVERSE_DIRECTION
                     reverse_wobble_flag = is_pass2 and WALL_PASS2_WOBBLE_REVERSE
                     
-                    if mode == "wobble":
+                    if mode in ["voxel", "voxel_wobble"]:
+                        top_layer_idx = chunk_layers[-1]
+                        bottom_layer_idx = chunk_layers[0]
+                        if WALL_WOBBLE_SEAM_ONLY and len(chunk_layers) > 1:
+                            bottom_layer_idx = max(chunk_layers[0], top_layer_idx - max(1, WALL_SEAM_WOBBLE_OVERLAP))
+                        segs = layer_outer_walls_map.get(top_layer_idx, [])
+                        if not segs: return []
+                        
+                        tz = layer_z_map.get(top_layer_idx, current_z)
+                        bz = layer_z_map.get(bottom_layer_idx, tz - (len(chunk_layers) * 0.2))
+                        curr_print_z = layer_z_map.get(current_layer, current_z)
+                        
+                        return generate_voxel_wobble_passes(
+                            top_segments=segs,
+                            bottom_segments=layer_outer_walls_map.get(bottom_layer_idx, []),
+                            top_z=tz,
+                            bottom_z=bz,
+                            current_printed_z=curr_print_z,
+                            speed=speed,
+                            x_plus_power=p_plus,
+                            x_minus_power=p_minus,
+                            overhang_plus_power=WALL_SMOOTH_OVERHANG_POWER_X_PLUS,
+                            overhang_minus_power=WALL_SMOOTH_OVERHANG_POWER_X_MINUS,
+                            angle_tol=WALL_SMOOTH_ANGLE_TOL,
+                            reverse_path=reverse_path_flag,
+                            overshoot=WALL_DEEP_WOBBLE_OVERSHOOT,
+                            spacing=WALL_DEEP_WOBBLE_SPACING,
+                            x_scale=getattr(globals(), 'WALL_WOBBLE_X_SCALE', 1.0),
+                            corner_power_drop=WALL_DEEP_WOBBLE_CORNER_POWER_DROP,
+                            corner_distance=WALL_DEEP_WOBBLE_CORNER_DISTANCE,
+                            retract_length=WALL_RETRACT,
+                            label="VOXEL WALL SMOOTH" if not is_pass2 else "VOXEL WALL SMOOTH Pass 2"
+                        )
+                    
+                    elif mode in ["voxel_raycast", "voxel_v2", "voxel_recon"]:
+                        top_layer_idx = chunk_layers[-1]
+                        bottom_layer_idx = chunk_layers[0]
+                        if WALL_WOBBLE_SEAM_ONLY and len(chunk_layers) > 1:
+                            bottom_layer_idx = max(chunk_layers[0], top_layer_idx - max(1, WALL_SEAM_WOBBLE_OVERLAP))
+                        segs = layer_outer_walls_map.get(top_layer_idx, [])
+                        if not segs: return []
+                        
+                        tz = layer_z_map.get(top_layer_idx, current_z)
+                        bz = layer_z_map.get(bottom_layer_idx, tz - (len(chunk_layers) * 0.2))
+                        curr_print_z = layer_z_map.get(current_layer, current_z)
+                        
+                        return generate_voxel_raycast_wall_passes(
+                            top_segments=segs,
+                            chunk_layers=chunk_layers,
+                            layer_outer_walls_map=layer_outer_walls_map,
+                            layer_z_map=layer_z_map,
+                            top_z=tz,
+                            bottom_z=bz,
+                            current_printed_z=curr_print_z,
+                            speed=speed,
+                            x_plus_power=p_plus,
+                            x_minus_power=p_minus,
+                            overhang_plus_power=WALL_SMOOTH_OVERHANG_POWER_X_PLUS,
+                            overhang_minus_power=WALL_SMOOTH_OVERHANG_POWER_X_MINUS,
+                            angle_tol=WALL_SMOOTH_ANGLE_TOL,
+                            reverse_path=reverse_path_flag,
+                            overshoot=WALL_HANDOVER_OVERSHOOT if WALL_HANDOVER_OVERSHOOT > 0 else WALL_DEEP_WOBBLE_OVERSHOOT,
+                            spacing=WALL_VOXEL_SPACING if WALL_VOXEL_SPACING > 0 else WALL_DEEP_WOBBLE_SPACING,
+                            theta_deg=WALL_LASER_THETA,
+                            min_speed=WALL_MIN_SPEED,
+                            max_speed=WALL_MAX_SPEED,
+                            corner_power_drop=WALL_THERMAL_POWER_DROP,
+                            corner_distance=WALL_DEEP_WOBBLE_CORNER_DISTANCE,
+                            retract_length=WALL_RETRACT,
+                            label="VOXEL RAYCAST WALL SMOOTH" if not is_pass2 else "VOXEL RAYCAST WALL SMOOTH Pass 2"
+                        )
+
+                    
+                    elif mode == "wobble":
                         top_layer_idx = chunk_layers[-1]
                         bottom_layer_idx = chunk_layers[0]
                         segs = layer_outer_walls_map.get(top_layer_idx, [])
@@ -2504,24 +2889,25 @@ def process_gcode(file_path, args=None):
                         
                         tz = layer_z_map.get(top_layer_idx, current_z)
                         bz = layer_z_map.get(bottom_layer_idx, tz - (len(chunk_layers) * 0.2))
+                        z_drop = tz - bz
+                        if z_drop <= 0: z_drop = len(chunk_layers) * 0.2
                         
-                        chunk_map = {idx: layer_outer_walls_map.get(idx, []) for idx in chunk_layers}
-                        chunk_z_map = {idx: layer_z_map.get(idx, tz - ((top_layer_idx - idx) * 0.2)) for idx in chunk_layers}
-                        
-                        return generate_deep_wobble_passes(
-                            chunk_map=chunk_map,
-                            chunk_z_map=chunk_z_map,
-                            chunk_layers=chunk_layers,
-                            top_segments=segs,
+                        return generate_wobble_passes(
+                            wall_segments=segs,
+                            prev_segments=layer_outer_walls_map.get(top_layer_idx - 1, []),
+                            bottom_segments=layer_outer_walls_map.get(bottom_layer_idx, []),
                             current_z=tz,
-                            z_drop=tz - bz,
+                            z_drop=z_drop,
+                            target_z_base=tz,
                             speed=speed,
                             passes_count=WALL_SMOOTH_PASSES,
                             x_plus_power=p_plus,
                             x_minus_power=p_minus,
                             angle_tol=WALL_SMOOTH_ANGLE_TOL,
                             reverse_path=reverse_path_flag,
-                            overshoot=WALL_DEEP_WOBBLE_OVERSHOOT
+                            reverse_wobble=reverse_wobble_flag,
+                            overshoot=WALL_DEEP_WOBBLE_OVERSHOOT,
+                            spacing=WALL_DEEP_WOBBLE_SPACING
                         )
                     
                     elif mode == "deep":
@@ -2552,18 +2938,23 @@ def process_gcode(file_path, args=None):
                     all_passes.extend(execute_pass(WALL_MODE_PASS2, WALL_PASS2_SPEED, WALL_PASS2_POWER_PLUS, WALL_PASS2_POWER_MINUS, is_pass2=True))
                 return all_passes
 
-            wobble_active = (WALL_MODE_PASS1 == "wobble" or WALL_MODE_PASS2 == "wobble")
+            wobble_active = (WALL_MODE_PASS1 in ["wobble", "voxel", "voxel_wobble", "voxel_raycast", "voxel_v2", "voxel_recon"] or WALL_MODE_PASS2 in ["wobble", "voxel", "voxel_wobble", "voxel_raycast", "voxel_v2", "voxel_recon"])
             effective_chunk_size = WALL_DEEP_WOBBLE_LAYERS if wobble_active else max(1, WALL_SMOOTH_FREQ)
-            effective_overlap = WALL_DEEP_WOBBLE_OVERLAP if wobble_active else WALL_DEEP_OVERLAP
+            effective_overlap = (WALL_DEEP_WOBBLE_OVERLAP if wobble_active else WALL_DEEP_OVERLAP) if WALL_DEEP_MODE else 0
             effective_overlap = min(max(1, effective_chunk_size) - 1, effective_overlap)
             if effective_overlap < 0: effective_overlap = 0
+
+
+            safety_offset = 0 if (is_final_layer or not WALL_DEEP_MODE) else WALL_DEEP_SAFETY
+            trigger_size = effective_chunk_size + safety_offset
+            retained_overlap = effective_overlap + safety_offset
 
             if is_boundary:
                 chunk = unswept_layers[:-1]
                 if chunk:
                     passes = do_sweep(chunk, ignore_safety=True)
                     if passes: 
-                        if WALL_DEEP_DELAY_PASSES and WALL_DEEP_MODE:
+                        if WALL_DEEP_DELAY_PASSES and WALL_DEEP_MODE and not is_final_layer:
                             delayed_deep_passes_queue.extend(passes)
                             delayed_deep_passes_trigger_layer = current_layer + WALL_DEEP_SAFETY
                         else:
@@ -2571,8 +2962,8 @@ def process_gcode(file_path, args=None):
                         stats["wall_smooth_layers"] += 1
                         recovery_layers.add(current_layer + 1)
                         
-                        # Execute Wobble Seam pass for the PREVIOUS chunk's seam
-                        if WALL_WOBBLE_SEAM_ONLY and WALL_WOBBLE_ENABLED and last_chunk_end_layer != -1 and WALL_SEAM_WOBBLE_OVERLAP > 0:
+                        # Execute legacy Wobble Seam pass only if standard/deep sweep mode was used
+                        if WALL_WOBBLE_SEAM_ONLY and WALL_WOBBLE_ENABLED and last_chunk_end_layer != -1 and WALL_SEAM_WOBBLE_OVERLAP > 0 and WALL_MODE_PASS1 not in ["voxel", "voxel_wobble"] and WALL_MODE_PASS2 not in ["voxel", "voxel_wobble"]:
                             half_down = (WALL_SEAM_WOBBLE_OVERLAP - 1) // 2
                             half_up = WALL_SEAM_WOBBLE_OVERLAP // 2
                             lower_target_layer = max(1, last_chunk_end_layer - half_down)
@@ -2583,41 +2974,39 @@ def process_gcode(file_path, args=None):
                             if target_layers_count >= WALL_SEAM_WOBBLE_OVERLAP:
                                 start_depth_layers = current_layer - upper_target_layer
                                 end_depth_layers = current_layer - lower_target_layer
+                                z_drop = (end_depth_layers - start_depth_layers + 1) * 0.2
+                                target_z_base = layer_z_map.get(upper_target_layer, current_z)
                                 
                                 wobble_seam_segments = layer_outer_walls_map.get(last_chunk_end_layer, [])
                                 if wobble_seam_segments:
                                     w_passes = generate_wobble_passes(
-                                        wobble_seam_segments,
-                                        outer_wall_segments,
-                                        current_z,
-                                        prev_z,
-                                        start_depth_layers,
-                                        end_depth_layers,
-                                        WALL_SEAM_WOBBLE_SPEED,
-                                        WALL_SMOOTH_PASSES,
-                                        WALL_SEAM_WOBBLE_POWER_PLUS,
-                                        WALL_SEAM_WOBBLE_POWER_MINUS,
-                                        WALL_SMOOTH_ANGLE_TOL,
-                                        overshoot=WALL_SEAM_WOBBLE_OVERSHOOT
+                                        wall_segments=wobble_seam_segments,
+                                        prev_segments=outer_wall_segments,
+                                        current_z=current_z,
+                                        z_drop=z_drop,
+                                        target_z_base=target_z_base,
+                                        speed=WALL_SEAM_WOBBLE_SPEED,
+                                        passes_count=WALL_SMOOTH_PASSES,
+                                        x_plus_power=WALL_SEAM_WOBBLE_POWER_PLUS,
+                                        x_minus_power=WALL_SEAM_WOBBLE_POWER_MINUS,
+                                        angle_tol=WALL_SMOOTH_ANGLE_TOL,
+                                        overshoot=WALL_SEAM_WOBBLE_OVERSHOOT,
+                                        is_seam_blend=True,
+                                        spacing=WALL_SEAM_WOBBLE_SPACING
                                     )
                                     if w_passes:
                                         if WALL_DEEP_DELAY_PASSES and WALL_DEEP_MODE and not is_final_layer:
-                                            delayed_deep_passes_queue.extend(w_passes)
+                                             delayed_deep_passes_queue.extend(w_passes)
                                         else:
-                                            injected.extend(w_passes)
+                                             injected.extend(w_passes)
                         
                         last_chunk_end_layer = current_layer
-                if effective_overlap > 0 and not is_final_layer:
-                    unswept_layers = unswept_layers[-effective_overlap:]
+                if retained_overlap > 0 and not is_final_layer:
+                    unswept_layers = unswept_layers[-retained_overlap:]
                 else:
                     unswept_layers = []
 
-            
-            safety_offset = 0 if is_final_layer else WALL_DEEP_SAFETY
-            trigger_size = effective_chunk_size + safety_offset
-            retained_overlap = effective_overlap + safety_offset
-
-            if is_final_layer or (effective_chunk_size > 0 and len(unswept_layers) >= trigger_size):
+            elif is_final_layer or (effective_chunk_size > 0 and len(unswept_layers) >= trigger_size):
                 chunk = list(unswept_layers)
                 if chunk:
                     passes = do_sweep(chunk)
@@ -2630,8 +3019,8 @@ def process_gcode(file_path, args=None):
                         stats["wall_smooth_layers"] += 1
                         recovery_layers.add(current_layer + 1)
                         
-                        # Execute Wobble Seam pass for the PREVIOUS chunk's seam
-                        if WALL_WOBBLE_SEAM_ONLY and WALL_WOBBLE_ENABLED and last_chunk_end_layer != -1 and WALL_SEAM_WOBBLE_OVERLAP > 0:
+                        # Execute legacy Wobble Seam pass only if standard/deep sweep mode was used
+                        if WALL_WOBBLE_SEAM_ONLY and WALL_WOBBLE_ENABLED and last_chunk_end_layer != -1 and WALL_SEAM_WOBBLE_OVERLAP > 0 and WALL_MODE_PASS1 not in ["voxel", "voxel_wobble"] and WALL_MODE_PASS2 not in ["voxel", "voxel_wobble"]:
                             half_down = (WALL_SEAM_WOBBLE_OVERLAP - 1) // 2
                             half_up = WALL_SEAM_WOBBLE_OVERLAP // 2
                             lower_target_layer = max(1, last_chunk_end_layer - half_down)
@@ -2642,22 +3031,25 @@ def process_gcode(file_path, args=None):
                             if target_layers_count >= WALL_SEAM_WOBBLE_OVERLAP:
                                 start_depth_layers = current_layer - upper_target_layer
                                 end_depth_layers = current_layer - lower_target_layer
+                                z_drop = (end_depth_layers - start_depth_layers + 1) * 0.2
+                                target_z_base = layer_z_map.get(upper_target_layer, current_z)
                                 
                                 wobble_seam_segments = layer_outer_walls_map.get(last_chunk_end_layer, [])
                                 if wobble_seam_segments:
                                     w_passes = generate_wobble_passes(
-                                        wobble_seam_segments,
-                                        outer_wall_segments,
-                                        current_z,
-                                        prev_z,
-                                        start_depth_layers,
-                                        end_depth_layers,
-                                        WALL_SEAM_WOBBLE_SPEED,
-                                        WALL_SMOOTH_PASSES,
-                                        WALL_SEAM_WOBBLE_POWER_PLUS,
-                                        WALL_SEAM_WOBBLE_POWER_MINUS,
-                                        WALL_SMOOTH_ANGLE_TOL,
-                                        overshoot=WALL_SEAM_WOBBLE_OVERSHOOT
+                                        wall_segments=wobble_seam_segments,
+                                        prev_segments=outer_wall_segments,
+                                        current_z=current_z,
+                                        z_drop=z_drop,
+                                        target_z_base=target_z_base,
+                                        speed=WALL_SEAM_WOBBLE_SPEED,
+                                        passes_count=WALL_SMOOTH_PASSES,
+                                        x_plus_power=WALL_SEAM_WOBBLE_POWER_PLUS,
+                                        x_minus_power=WALL_SEAM_WOBBLE_POWER_MINUS,
+                                        angle_tol=WALL_SMOOTH_ANGLE_TOL,
+                                        overshoot=WALL_SEAM_WOBBLE_OVERSHOOT,
+                                        is_seam_blend=True,
+                                        spacing=WALL_SEAM_WOBBLE_SPACING
                                     )
                                     if w_passes:
                                         if WALL_DEEP_DELAY_PASSES and WALL_DEEP_MODE and not is_final_layer:
@@ -2797,24 +3189,54 @@ def process_gcode(file_path, args=None):
                 ))
                 stats["anneal_passes"] += 1
 
-        # ── Laser Riveting ──
-        if RIVET_ENABLED and current_layer >= RIVET_MIN_LAYER and (current_layer % max(1, RIVET_FREQ)) == 0:
-            if len(solid_points) >= 2:
-                clusters = cluster_points(solid_points, max_dist=2.5)
-                for cluster in clusters:
-                    if len(cluster) < 2:
-                        continue
-                    bbox, (cx, cy) = compute_rotated_bbox(cluster, angle_deg=0.0, margin=RIVET_MARGIN)
-                    if bbox is not None and bbox_area(bbox) >= RIVET_MIN_AREA:
-                        injected.extend(generate_laser_rivets(
-                            bbox, cx, cy, 0.0, RIVET_POWER, RIVET_TIME, RIVET_Z_HOP, RIVET_SPACING,
-                            laser_pin=RIVET_LASER_PIN, offset_x=RIVET_OFFSET_X, offset_y=RIVET_OFFSET_Y,
-                            wobble_radius=RIVET_WOBBLE_RADIUS, wobble_turns=RIVET_WOBBLE_TURNS, wobble_max_speed=RIVET_WOBBLE_MAX_SPEED, pulse_period=RIVET_PULSE_PERIOD, pulse_duty=RIVET_PULSE_DUTY,
-                            cluster=cluster, boolean_res=0.2
-                        ))
-                stats["rivet_layers"] += 1
+        if is_final_layer and delayed_deep_passes_queue:
+            injected.extend(delayed_deep_passes_queue)
+            delayed_deep_passes_queue = []
 
         return injected
+
+    def generate_global_smooth_passes(points, target_z, is_intermediate_layer=False):
+        pass_z = (target_z if target_z is not None else 0.0) + SMOOTH_Z_HOP
+        gcode = []
+        gcode.append(f"; ── Global 2D Smoothing Pass (Layer Z={target_z if target_z is not None else 0.0:.3f}, Laser Z={pass_z:.3f}) ──\n")
+        gcode.append(f"G0 Z{pass_z:.3f} F1200\n")
+        
+        subsampled_points = downsample_points(points, resolution=max(0.5, SMOOTH_BOOLEAN_RES)) if len(points) > 50000 else points
+        
+        for pass_idx in range(SMOOTH_PASSES):
+            current_angle = SMOOTH_ANGLE + (SMOOTH_ANGLE_STEP * pass_idx if SMOOTH_ALTERNATE else 0.0)
+            bbox, (cx, cy) = compute_rotated_bbox(points, angle_deg=current_angle, margin=SMOOTH_MARGIN)
+            
+            if bbox is not None and bbox_area(bbox) >= SMOOTH_MIN_AREA:
+                pass_label = f"Global 2D Smooth Pass {pass_idx+1}"
+                boosted_power = calculate_boosted_power(SMOOTH_POWER, bbox_area(bbox)) if SMOOTH_ENABLE_AREA_BOOST else SMOOTH_POWER
+                
+                is_first_pass = (pass_idx == 0)
+                is_last_pass = (pass_idx == SMOOTH_PASSES - 1)
+                
+                do_retract = is_first_pass
+                do_unretract = is_last_pass and not is_intermediate_layer
+                do_tag = is_last_pass and is_intermediate_layer
+                
+                inj = generate_laser_grid(
+                    bbox, cx, cy, current_angle, SMOOTH_SPEED, boosted_power, 0.0,
+                    SMOOTH_SPACING, SMOOTH_OVERSHOOT, pass_label,
+                    laser_pin=SMOOTH_LASER_PIN, offset_x=SMOOTH_OFFSET_X, offset_y=SMOOTH_OFFSET_Y, 
+                    fan_speed=SMOOTH_FAN_SPEED, preheat=SMOOTH_PREHEAT, 
+                    overshoot_without_laser=SMOOTH_OVERSHOOT_WITHOUT_LASER, 
+                    cluster=subsampled_points, layer_points=subsampled_points,
+                    layer_z=pass_z, boolean_res=max(0.5, SMOOTH_BOOLEAN_RES),
+                    retract_length=5.0,
+                    retract_at_start=do_retract,
+                    unretract_at_end=do_unretract,
+                    tag_retract=do_tag
+                )
+                if inj:
+                    gcode.extend(inj)
+                    stats["smooth_passes"] += 1
+        
+        gcode.append("SET_PIN PIN=laser_pwm1 VALUE=0\nSET_PIN PIN=laser_pwm2 VALUE=0\nSET_PIN PIN=laser_pwm3 VALUE=0 ; [Global Smooth] safety OFF\n")
+        return gcode
 
     final_passes_injected = False
 
@@ -2945,37 +3367,15 @@ def process_gcode(file_path, args=None):
         # ────────────────────────────────────
         # Detect end of print commands
         # ────────────────────────────────────
-        if stripped in (";PRINT_END", "M104 S0") or stripped.startswith("; custom gcode"):
-            # ── Inject Global 2D Smoothing Pass ──
+        cmd_clean = stripped.split(';')[0].strip().upper()
+        if cmd_clean in ("M104 S0", "M140 S0", "M84") or stripped.startswith(";PRINT_END") or stripped.startswith("; custom gcode") or stripped.startswith("; EXECUTABLE_BLOCK_END") or stripped.startswith("; CONFIG_BLOCK_START"):
+            # ── Inject Global 2D Smoothing Pass (Standard Mode / Last Layer Fallback) ──
             if GLOBAL_SMOOTH_ENABLED and not global_pass_injected and len(global_solid_points) >= 2:
-                global_pass_injected = True
-                pass_z = (current_z if current_z is not None else 0.0) + 0.5
-                out_lines.append(f"; ── Global 2D Smoothing Pass ──\n")
-                out_lines.append(f"G0 Z{pass_z:.3f} F1200\n")
-                
-                # We need a fallback if current_z wasn't set, though it should be.
-                # Subsample points for performance without creating gaps in the mask
-                subsampled_points = downsample_points(global_solid_points, resolution=max(0.5, SMOOTH_BOOLEAN_RES)) if len(global_solid_points) > 50000 else global_solid_points
-                
-                for pass_idx in range(SMOOTH_PASSES):
-                    current_angle = SMOOTH_ANGLE + (SMOOTH_ANGLE_STEP * pass_idx if SMOOTH_ALTERNATE else 0.0)
-                    bbox, (cx, cy) = compute_rotated_bbox(global_solid_points, angle_deg=current_angle, margin=SMOOTH_MARGIN)
-                    
-                    if bbox is not None and bbox_area(bbox) >= SMOOTH_MIN_AREA:
-                        pass_label = f"Global 2D Smooth Pass {pass_idx+1}"
-                        injected = generate_laser_grid(
-                            bbox, cx, cy, current_angle, SMOOTH_SPEED, SMOOTH_POWER, 0.0,
-                            SMOOTH_SPACING, SMOOTH_OVERSHOOT, pass_label,
-                            laser_pin=SMOOTH_LASER_PIN, offset_x=SMOOTH_OFFSET_X, offset_y=SMOOTH_OFFSET_Y, 
-                            fan_speed=SMOOTH_FAN_SPEED, preheat=SMOOTH_PREHEAT, 
-                            overshoot_without_laser=SMOOTH_OVERSHOOT_WITHOUT_LASER, 
-                            cluster=subsampled_points, layer_points=subsampled_points,
-                            layer_z=pass_z, boolean_res=max(0.5, SMOOTH_BOOLEAN_RES)
-                        )
-                        if injected:
-                            out_lines.extend(injected)
-                            stats["smooth_passes"] += 1
-                out_lines.append("SET_PIN PIN=laser_pwm1 VALUE=0\nSET_PIN PIN=laser_pwm2 VALUE=0 ; [Global Smooth] safety OFF\n")
+                if GLOBAL_SMOOTH_LAYER is None or current_layer == GLOBAL_SMOOTH_LAYER:
+                    global_passes = generate_global_smooth_passes(global_solid_points, current_z, is_intermediate_layer=False)
+                    out_lines.extend(global_passes)
+                    global_pass_injected = True
+                    skip_next_purge = True
 
             if recovery_flow_active:
                 out_lines.append("M221 S100 ; Reset recovery flow rate before end\n")
@@ -3000,6 +3400,11 @@ def process_gcode(file_path, args=None):
             # Before starting the new layer, inject passes for the PREVIOUS layer
             if current_layer >= 0:
                 injected = inject_end_of_layer_passes()
+                if GLOBAL_SMOOTH_ENABLED and not global_pass_injected and GLOBAL_SMOOTH_LAYER is not None and current_layer == GLOBAL_SMOOTH_LAYER and len(global_solid_points) >= 2:
+                    global_passes = generate_global_smooth_passes(global_solid_points, current_z, is_intermediate_layer=True)
+                    injected.extend(global_passes)
+                    global_pass_injected = True
+                
                 if injected:
                     out_lines.extend(injected)
                     if any("[NO_PURGE]" in inj_line for inj_line in injected):
@@ -3213,7 +3618,10 @@ def process_gcode(file_path, args=None):
 
     # ── End of file: inject final passes for last layer (fallback) ──
     if not final_passes_injected and current_layer >= 0:
-        out_lines.extend(inject_end_of_layer_passes())
+        final_passes_injected = True
+        injected = inject_end_of_layer_passes(is_final_layer=True)
+        if injected:
+            out_lines.extend(injected)
 
     # Final safety
     out_lines.append("SET_PIN PIN=laser_pwm1 VALUE=0\nSET_PIN PIN=laser_pwm2 VALUE=0 ; [Post-Proc] safety OFF (EOF)\n")
@@ -3236,6 +3644,7 @@ def process_gcode(file_path, args=None):
 
 if __name__ == "__main__":
     import argparse
+    log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "postprocess_debug.log")
 
     parser = argparse.ArgumentParser(
         description="Advanced Laser-Assisted FDM Post-Processor: "
@@ -3276,7 +3685,9 @@ Examples:
     smooth_group.add_argument("--smooth", action="store_true",
                               help="Enable top surface smoothing")
     smooth_group.add_argument("--global-smooth", action="store_true",
-                              help="Enable global 2D top surface smoothing at the end of the print")
+                              help="Enable global 2D top surface smoothing (runs at last layer if --global-smooth-layer is not set)")
+    smooth_group.add_argument("--global-smooth-layer", type=int, default=None,
+                              help="Specific layer index (0-indexed) to run global top surface smoothing. If set, triggers immediately after this layer.")
     smooth_group.add_argument("--smooth-local", action="store_true",
                               help="Keep local smoothing active even when global smoothing is enabled")
     smooth_group.add_argument("--smooth-power", type=float, default=SMOOTH_POWER,
@@ -3356,45 +3767,29 @@ Examples:
     anneal_group.add_argument("--anneal-min-area", type=float, default=ANNEAL_MIN_AREA,
                               help=f"Annealing min area in mm² (default: {ANNEAL_MIN_AREA})")
 
-    # ── Riveting args ──
-    rivet_group = parser.add_argument_group("Laser Riveting")
-    rivet_group.add_argument("--rivet", action="store_true", help="Enable laser riveting")
-    rivet_group.add_argument("--rivet-power", type=float, default=RIVET_POWER, help=f"Rivet PWM (default: {RIVET_POWER})")
-    rivet_group.add_argument("--rivet-time", type=int, default=RIVET_TIME, help=f"Rivet dwell time in ms (default: {RIVET_TIME})")
-    rivet_group.add_argument("--rivet-spacing", type=float, default=RIVET_SPACING, help=f"Spacing between rivets in mm (default: {RIVET_SPACING})")
-    rivet_group.add_argument("--rivet-freq", type=int, default=RIVET_FREQ, help=f"Rivet frequency (layers) (default: {RIVET_FREQ})")
-    rivet_group.add_argument("--rivet-offset-x", type=float, default=None, help="Custom X offset for Rivet laser")
-    rivet_group.add_argument("--rivet-offset-y", type=float, default=None, help="Custom Y offset for Rivet laser")
-    rivet_group.add_argument("--rivet-min-area", type=float, default=RIVET_MIN_AREA, help=f"Minimum area in mm2 to rivet (default: {RIVET_MIN_AREA})")
-    rivet_group.add_argument("--rivet-min-layer", type=int, default=RIVET_MIN_LAYER, help=f"Minimum layer to start riveting (default: {RIVET_MIN_LAYER})")
-    rivet_group.add_argument("--rivet-margin", type=float, default=RIVET_MARGIN, help=f"Margin (shrinkage) in mm from the boundary (default: {RIVET_MARGIN})")
-    rivet_group.add_argument("--rivet-wobble-radius", type=float, default=RIVET_WOBBLE_RADIUS, help=f"Wobble radius in mm (default: {RIVET_WOBBLE_RADIUS})")
-    rivet_group.add_argument("--rivet-wobble-turns", type=int, default=RIVET_WOBBLE_TURNS, help=f"Number of wobble revolutions (default: {RIVET_WOBBLE_TURNS})")
-    rivet_group.add_argument("--rivet-wobble-max-speed", type=float, default=RIVET_WOBBLE_MAX_SPEED, help=f"Max wobble speed in mm/s (default: {RIVET_WOBBLE_MAX_SPEED})")
-    rivet_group.add_argument("--rivet-pulse-period", type=int, default=RIVET_PULSE_PERIOD, help=f"Pulse period in ms (default: {RIVET_PULSE_PERIOD})")
-    rivet_group.add_argument("--rivet-pulse-duty", type=float, default=RIVET_PULSE_DUTY, help=f"Pulse duty cycle (default: {RIVET_PULSE_DUTY})")
+    
 
     # ── Wall Smoothing args ──
     wall_smooth_group = parser.add_argument_group("Wall Smoothing (Remelt Outer Shell)")
     wall_smooth_group.add_argument("--wall-smooth", action="store_true", help="Enable wall smoothing")
-    wall_smooth_group.add_argument("--wall-mode-pass1", choices=["standard", "deep", "wobble"], default="standard",
-                                   help="First pass smoothing mode")
-    wall_smooth_group.add_argument("--wall-mode-pass2", choices=["none", "standard", "deep", "wobble"], default="none",
-                                   help="Second pass smoothing mode")
+    wall_smooth_group.add_argument("--wall-mode-pass1", choices=["standard", "deep", "wobble", "voxel", "voxel_wobble", "voxel_raycast", "voxel_v2", "voxel_recon"], default="standard",
+                                    help="First pass smoothing mode. [ALPHA NOTICE: Modes other than standard are experimental and likely to contain bugs with complex parts - verify G-code before printing]")
+    wall_smooth_group.add_argument("--wall-mode-pass2", choices=["none", "standard", "deep", "wobble", "voxel", "voxel_wobble", "voxel_raycast", "voxel_v2", "voxel_recon"], default="none",
+                                   help="Second pass smoothing mode. [ALPHA NOTICE: Modes other than none/standard are experimental and likely to contain bugs with complex parts - verify G-code before printing]")
     wall_smooth_group.add_argument("--wall-pass2-speed", type=float, default=None, help="Pass 2 speed")
     wall_smooth_group.add_argument("--wall-pass2-power-plus", type=float, default=None, help="Pass 2 X+ power")
     wall_smooth_group.add_argument("--wall-pass2-power-minus", type=float, default=None, help="Pass 2 X- power")
     wall_smooth_group.add_argument("--wall-pass2-reverse", action="store_true", help="Reverse path direction for Pass 2")
     wall_smooth_group.add_argument("--wall-pass2-wobble-reverse", action="store_true", help="Reverse phase of wobble for Pass 2")
-    wall_smooth_group.add_argument("--wall-power-plus", type=float, default=WALL_SMOOTH_POWER_X_PLUS,
+    wall_smooth_group.add_argument("--wall-power-plus", "--voxel-power-right", type=float, default=WALL_SMOOTH_POWER_X_PLUS,
                                    help=f"Wall smoothing PWM for X+ (default: {WALL_SMOOTH_POWER_X_PLUS})")
-    wall_smooth_group.add_argument("--wall-power-minus", type=float, default=WALL_SMOOTH_POWER_X_MINUS,
+    wall_smooth_group.add_argument("--wall-power-minus", "--voxel-power-left", type=float, default=WALL_SMOOTH_POWER_X_MINUS,
                                    help=f"Wall smoothing PWM for X- (default: {WALL_SMOOTH_POWER_X_MINUS})")
     wall_smooth_group.add_argument("--wall-overhang-power-plus", type=float, default=WALL_SMOOTH_OVERHANG_POWER_X_PLUS,
                                    help=f"Overhang (Standard mode) PWM for X+ (default: {WALL_SMOOTH_OVERHANG_POWER_X_PLUS})")
     wall_smooth_group.add_argument("--wall-overhang-power-minus", type=float, default=WALL_SMOOTH_OVERHANG_POWER_X_MINUS,
                                    help=f"Overhang (Standard mode) PWM for X- (default: {WALL_SMOOTH_OVERHANG_POWER_X_MINUS})")
-    wall_smooth_group.add_argument("--wall-speed", type=float, default=WALL_SMOOTH_SPEED,
+    wall_smooth_group.add_argument("--wall-speed", "--voxel-surface-speed", type=float, default=WALL_SMOOTH_SPEED,
                                    help=f"Wall smoothing speed in mm/s (default: {WALL_SMOOTH_SPEED})")
     wall_smooth_group.add_argument("--wall-passes", type=int, default=WALL_SMOOTH_PASSES,
                                    help=f"Number of wall smoothing passes (default: {WALL_SMOOTH_PASSES})")
@@ -3421,7 +3816,7 @@ Examples:
                                    help="Disable overhang detection completely")
     wall_smooth_group.add_argument("--wall-deep-overlap", type=int, default=WALL_DEEP_OVERLAP,
                                    help=f"Number of layers to overlap deep mode sweeps (default: {WALL_DEEP_OVERLAP})")
-    wall_smooth_group.add_argument("--wall-deep-safety", type=int, default=WALL_DEEP_SAFETY,
+    wall_smooth_group.add_argument("--wall-deep-safety", "--wall-safety-layers", "--voxel-safety-layers", type=int, default=WALL_DEEP_SAFETY,
                                    help=f"Layers to leave unsmoothed at the top of a deep block (default: {WALL_DEEP_SAFETY})")
     wall_smooth_group.add_argument("--wall-max-layer-safety", type=int, default=0,
                                    help="Number of topmost layers of the entire print to exclude from smoothing")
@@ -3447,24 +3842,35 @@ Examples:
                                    help="Percentage to drop power at sharp corners (default: 50.0)")
     wall_smooth_group.add_argument("--wall-corner-distance", type=float, default=1.5,
                                    help="Distance in mm from corner apex to begin power drop (default: 1.5)")
-    wall_smooth_group.add_argument("--wall-offset-level", type=int, default=0, choices=[0, 1, 2, 3, 4],
-                                   help="Laser offset level for wall smoothing (0=default, 1=11.5/-12.6mm, 2=21.2/-23.8mm, 3=31.9/-35.7mm, 4=42.5/-47.6mm)")
-    wall_smooth_group.add_argument("--wall-x-plus-offset", type=float, default=None, help="Custom X offset for Wall Plus laser (overrides level)")
-    wall_smooth_group.add_argument("--wall-x-minus-offset", type=float, default=None, help="Custom X offset for Wall Minus laser (overrides level)")
-    wall_smooth_group.add_argument("--wall-z-offset", type=float, default=None, help="Custom Z offset for Wall lasers (overrides level)")
+    wall_smooth_group.add_argument("--wall-offset-level", default="0",
+                                   help="Laser offset level for wall smoothing (0=2.0mm, 1=5.0mm, 2=10.0mm, 3=15.0mm, 4=20.0mm, or 'custom')")
+    wall_smooth_group.add_argument("--wall-x-plus-offset", type=float, default=None, help="Calibrated X offset for Wall Plus laser (required for wall smoothing)")
+    wall_smooth_group.add_argument("--wall-x-minus-offset", type=float, default=None, help="Calibrated X offset for Wall Minus laser (required for wall smoothing)")
+    wall_smooth_group.add_argument("--wall-z-offset", type=float, default=None, help="Strictly positive Z standoff offset for Wall lasers (Z > 0 mm)")
                                    
-    wall_smooth_group.add_argument("--wall-wobble-projection-factor", type=float, default=1.0, help="Multiplier for X-axis projection")
-    wall_smooth_group.add_argument("--wall-wobble-pull-only", action="store_true", help="Force wobble sweeps to never push along the wall path (adds Y component)")
+    wall_smooth_group.add_argument("--wall-wobble-x-scale", "--wall-wobble-projection-factor", "--wall-x-scale", "--voxel-x-scale",
+                                   dest="wall_wobble_x_scale", type=float, default=1.0,
+                                   help="Scaling factor for X sweep length / projection to combat defocusing (default: 1.0)")
     wall_smooth_group.add_argument("--wall-wobble-pull-continuous", action="store_true", help="Use standard zig-zag micro-geometry while retaining pull-only macro-path reversal")
     wall_smooth_group.add_argument("--wall-wobble", action="store_true", help="Enable X-axis Z-wobble mode")
     wall_smooth_group.add_argument("--wall-wobble-seam-only", action="store_true", help="Use wobble only for blending Deep Mode overlap seams")
     
-    wall_smooth_group.add_argument("--wall-deep-wobble-layers", type=int, default=4, help="Max layers per deep wobble chunk")
-    wall_smooth_group.add_argument("--wall-deep-wobble-overlap", type=int, default=1, help="Layer overlap between deep wobble chunks")
-    wall_smooth_group.add_argument("--wall-deep-wobble-spacing", type=float, default=0.2, help="Vertical grid spacing for deep wobble")
+    wall_smooth_group.add_argument("--wall-chunk-layers", "--wall-deep-wobble-layers", "--voxel-chunk-layers", dest="wall_deep_wobble_layers", type=int, default=4, help="Number of layers per smoothing chunk block (default: 4)")
+    wall_smooth_group.add_argument("--wall-chunk-overlap", "--wall-deep-wobble-overlap", dest="wall_deep_wobble_overlap", type=int, default=1, help="Layer overlap between chunks (default: 1)")
+    wall_smooth_group.add_argument("--wall-deep-wobble-spacing", "--voxel-resolution", dest="wall_deep_wobble_spacing", type=float, default=0.2, help="Vertical grid spacing for deep wobble")
     wall_smooth_group.add_argument("--wall-deep-wobble-corner-power-drop", type=float, default=50.0, help="Percentage to drop power at sharp corners during deep wobble (default: 50.0)")
     wall_smooth_group.add_argument("--wall-deep-wobble-corner-distance", type=float, default=1.5, help="Distance in mm from corner apex to begin power drop during deep wobble (default: 1.5)")
-    wall_smooth_group.add_argument("--wall-deep-wobble-overshoot", type=float, default=0.0, help="Distance in mm to overshoot corners before turning laser off for deep wobble (default: 0.0)")
+    wall_smooth_group.add_argument("--wall-deep-wobble-overshoot", "--voxel-overshoot", dest="wall_deep_wobble_overshoot", type=float, default=0.0, help="Distance in mm to overshoot corners before turning laser off for deep wobble (default: 0.0)")
+    wall_smooth_group.add_argument("--wall-wobble-adaptive-slope", action="store_true", help="Adapt wobble apex position dynamically to match underlying layer slopes")
+    wall_smooth_group.add_argument("--wall-smart-chunking", "--wall-wobble-smart-chunking", dest="wall_wobble_smart_chunking", action="store_true", default=True, help="Enable smart island / bridge / overhang boundary chunking")
+
+    wall_smooth_group.add_argument("--wall-min-speed", "--voxel-min-speed", dest="wall_min_speed", type=float, default=5.0, help="Minimum speed floor in mm/s (default: 5.0)")
+    wall_smooth_group.add_argument("--wall-max-speed", "--voxel-max-speed", dest="wall_max_speed", type=float, default=120.0, help="Maximum speed ceiling in mm/s (default: 120.0)")
+    wall_smooth_group.add_argument("--wall-laser-theta", type=float, default=22.0, help="Diode laser elevation angle in degrees for sloped raycasting (default: 22.0)")
+    wall_smooth_group.add_argument("--wall-voxel-spacing", type=float, default=0.2, help="Stroke spacing in mm along outer wall (default: 0.2)")
+    wall_smooth_group.add_argument("--wall-handover-overshoot", type=float, default=1.0, help="Tangential overshoot in mm at opposing-laser handover corners (default: 1.0)")
+    wall_smooth_group.add_argument("--wall-thermal-power-drop", type=float, default=50.0, help="Power drop percentage at same-laser acute corners (default: 50.0)")
+
     
     wall_smooth_group.add_argument("--wall-seam-wobble-speed", type=float, default=20.0, help="X-axis oscillation speed in mm/s for seam blending")
     wall_smooth_group.add_argument("--wall-seam-wobble-power-plus", type=float, default=0.2, help="Power for wobble X+ for seam blending")
@@ -3500,244 +3906,314 @@ Examples:
     purge_group.add_argument("--purge-y", type=float, default=5.0, help="Y coordinate for mid-air purge (default: 5.0)")
     purge_group.add_argument("--purge-extra", type=float, default=25.0, help="Extra extrusion amount to prime nozzle (default: 25.0)")
 
-    # ── Z-Sweeping args ──
-    sweep_group = parser.add_argument_group("Z-Sweeping (Calibration)")
-    sweep_group.add_argument("--sweep-feature", type=str, default="",
-                             help="Feature to sweep (e.g. rivet-power, smooth-power, anneal-power, preheat-power)")
-    sweep_group.add_argument("--sweep-start-z", type=float, default=SWEEP_START_Z)
-    sweep_group.add_argument("--sweep-end-z", type=float, default=SWEEP_END_Z)
-    sweep_group.add_argument("--sweep-start-val", type=float, default=SWEEP_START_VAL)
-    sweep_group.add_argument("--sweep-end-val", type=float, default=SWEEP_END_VAL)
+
 
     # ── Positional ──
     parser.add_argument("gcode_file",
                         help="Path to the G-code file (appended by OrcaSlicer)")
 
-    args = parser.parse_args()
+    try:
+        args, unknown = parser.parse_known_args()
 
-    # Apply CLI arguments to globals
-    PREHEAT_ENABLED  = args.preheat
-    PREHEAT_POWER    = args.power
-    REF_SPEED        = args.ref_speed
-    MIN_LASER_POWER  = args.min_power
-    MIN_LAYER        = args.min_layer
-    TRAILING_ENABLED = args.trailing
-    TRAILING_RATIO   = args.trailing_ratio
-
-    SMOOTH_ENABLED   = args.smooth
-    GLOBAL_SMOOTH_ENABLED = getattr(args, 'global_smooth', False)
-    SMOOTH_LOCAL_ENABLED = getattr(args, 'smooth_local', False)
-    SMOOTH_POWER     = args.smooth_power
-    SMOOTH_SPEED     = args.smooth_speed
-    SMOOTH_SPACING   = args.smooth_spacing
-    SMOOTH_OVERSHOOT = args.smooth_overshoot
-    SMOOTH_OVERSHOOT_WITHOUT_LASER = args.smooth_overshoot_without_laser
-    SMOOTH_GROUP_SLOPES = getattr(args, 'smooth_group_slopes', False)
-    SMOOTH_Z_HOP     = max(0.2, args.smooth_z_hop)
-    SMOOTH_FAN_SPEED = args.smooth_fan_speed
-    SMOOTH_ANGLE     = args.smooth_angle
-    SMOOTH_ANGLE_STEP= args.smooth_angle_step
-    SMOOTH_PREHEAT   = args.smooth_preheat
-    SMOOTH_PASSES    = args.smooth_passes
-    SMOOTH_ALTERNATE = not args.smooth_no_alternate
-    
-    if args.smooth_smart_chunking:
-        SMOOTH_SMART_CHUNKING = True
-    if args.smooth_chunk_size is not None:
-        SMOOTH_CHUNK_SIZE = args.smooth_chunk_size
-    if args.smooth_chunk_no_full_pass:
-        SMOOTH_CHUNK_FULL_PASS = False
-    if args.smooth_chunk_full_pass_power is not None:
-        SMOOTH_CHUNK_FULL_PASS_POWER = args.smooth_chunk_full_pass_power
-    if args.smooth_boolean_res is not None:
-        SMOOTH_BOOLEAN_RES = args.smooth_boolean_res if args.smooth_boolean_res > 0 else 0.1
-
-    SMOOTH_MARGIN    = args.smooth_margin
-    SMOOTH_MIN_AREA  = args.smooth_min_area
-    SMOOTH_ENABLE_AREA_BOOST = getattr(args, 'smooth_enable_area_boost', False)
-    SMOOTH_AREA_BOOST = args.smooth_area_boost
-    SMOOTH_AREA_MAX   = args.smooth_area_max
-    SMOOTH_AREA_BASE  = args.smooth_area_base
-    SMOOTH_OVERSHOOT = args.smooth_overshoot
-    SMOOTH_OVERSHOOT_WITHOUT_LASER = args.smooth_overshoot_without_laser
-
-    if args.smooth_offset_x is not None:
-        SMOOTH_OFFSET_X = args.smooth_offset_x
-    if args.smooth_offset_y is not None:
-        SMOOTH_OFFSET_Y = args.smooth_offset_y
-    if args.smooth_offset_z is not None:
-        SMOOTH_OFFSET_Z = args.smooth_offset_z
-
-    ANNEAL_ENABLED   = args.anneal
-    ANNEAL_POWER     = args.anneal_power
-    ANNEAL_SPEED     = args.anneal_speed
-    ANNEAL_SPACING   = args.anneal_spacing
-    ANNEAL_OVERSHOOT = args.anneal_overshoot
-    ANNEAL_OVERSHOOT_WITHOUT_LASER = args.anneal_overshoot_without_laser
-    ANNEAL_ANGLE     = args.anneal_angle
-    ANNEAL_MARGIN    = args.anneal_margin
-    ANNEAL_MIN_AREA  = args.anneal_min_area
-
-    RIVET_ENABLED   = args.rivet
-    RIVET_POWER     = args.rivet_power
-    RIVET_TIME      = args.rivet_time
-    RIVET_SPACING   = args.rivet_spacing
-    RIVET_FREQ      = args.rivet_freq
-
-    if args.rivet_offset_x is not None:
-        RIVET_OFFSET_X = args.rivet_offset_x
-    if args.rivet_offset_y is not None:
-        RIVET_OFFSET_Y = args.rivet_offset_y
-        
-    RIVET_MIN_AREA = args.rivet_min_area
-    RIVET_MIN_LAYER = args.rivet_min_layer
-    RIVET_MARGIN = args.rivet_margin
-    RIVET_WOBBLE_RADIUS = args.rivet_wobble_radius
-    RIVET_WOBBLE_TURNS = args.rivet_wobble_turns
-    RIVET_WOBBLE_MAX_SPEED = args.rivet_wobble_max_speed
-    RIVET_PULSE_PERIOD = args.rivet_pulse_period
-    RIVET_PULSE_DUTY = args.rivet_pulse_duty
-
-    WALL_SMOOTH_ENABLED = args.wall_smooth
-    WALL_SMOOTH_POWER_X_PLUS = args.wall_power_plus
-    WALL_SMOOTH_POWER_X_MINUS = args.wall_power_minus
-    WALL_SMOOTH_OVERHANG_POWER_X_PLUS = args.wall_overhang_power_plus
-    WALL_SMOOTH_OVERHANG_POWER_X_MINUS = args.wall_overhang_power_minus
-    
-    WALL_OVERHANG_POWER_MAX_PLUS = getattr(args, 'wall_overhang_power_max_plus', WALL_SMOOTH_OVERHANG_POWER_X_PLUS)
-    WALL_OVERHANG_POWER_MAX_MINUS = getattr(args, 'wall_overhang_power_max_minus', WALL_SMOOTH_OVERHANG_POWER_X_MINUS)
-    
-    WALL_MODE_PASS1          = getattr(args, 'wall_mode_pass1', 'standard')
-    WALL_MODE_PASS2          = getattr(args, 'wall_mode_pass2', 'none')
-    WALL_PASS2_SPEED         = getattr(args, 'wall_pass2_speed', WALL_SMOOTH_SPEED)
-    WALL_PASS2_POWER_PLUS    = getattr(args, 'wall_pass2_power_plus', WALL_SMOOTH_POWER_X_PLUS)
-    WALL_PASS2_POWER_MINUS   = getattr(args, 'wall_pass2_power_minus', WALL_SMOOTH_POWER_X_MINUS)
-    WALL_PASS2_REVERSE_DIRECTION = getattr(args, 'wall_pass2_reverse', False)
-    WALL_PASS2_WOBBLE_REVERSE    = getattr(args, 'wall_pass2_wobble_reverse', False)
-
-    WALL_SMOOTH_SPEED = args.wall_speed
-    WALL_SMOOTH_PASSES = args.wall_passes
-    WALL_SMOOTH_FREQ = args.wall_freq
-    WALL_SMOOTH_MIN_LAYER = args.wall_min_layer
-    WALL_SMOOTH_ANGLE_TOL = args.wall_angle_tol
-    WALL_SMOOTH_TARGET = args.wall_target
-    WALL_SMOOTH_MIN_PATH_AREA = args.wall_min_path_area
-    
-    WALL_DEEP_MODE            = (WALL_MODE_PASS1 in ["deep", "wobble"] or WALL_MODE_PASS2 in ["deep", "wobble"])
-    WALL_Z_DIVISIONS          = args.wall_z_divisions
-    WALL_DEEP_OVERHANG_ANGLE  = args.wall_deep_overhang_angle
-    WALL_DEEP_DEVIATION       = args.wall_deep_deviation
-    WALL_DEEP_MIN_OVERHANG_LENGTH = args.wall_deep_min_overhang_length
-    WALL_DEEP_OVERLAP         = args.wall_deep_overlap
-    WALL_DEEP_SAFETY          = args.wall_deep_safety
-    WALL_MAX_LAYER_SAFETY     = args.wall_max_layer_safety
-    WALL_DEEP_IGNORE_OVERHANG_LENGTH = args.wall_overhang_ignore_length
-    WALL_DEEP_BOTTOM_UP       = args.wall_deep_bottom_up
-    WALL_DEEP_INTERLACE       = args.wall_deep_interlace
-    WALL_DEEP_DELAY_PASSES    = args.wall_deep_delay_passes
-    WALL_DEEP_FADE            = args.wall_deep_fade
-    WALL_DISABLE_OVERHANG     = args.wall_disable_overhang
-    WALL_RECOVERY_FLOW        = args.wall_recovery_flow
-    WALL_RETRACT              = args.wall_retract
-    WALL_MAX_RETRACT          = args.wall_max_retract
-    WALL_STANDBY_TEMP_DROP    = args.wall_standby_temp_drop
-    
-    WALL_WOBBLE_ENABLED       = args.wall_wobble
-    WALL_WOBBLE_SEAM_ONLY     = args.wall_wobble_seam_only
-    
-    WALL_DEEP_WOBBLE_LAYERS        = getattr(args, 'wall_deep_wobble_layers', 4)
-    WALL_DEEP_WOBBLE_OVERLAP       = getattr(args, 'wall_deep_wobble_overlap', 1)
-    WALL_DEEP_WOBBLE_SPACING       = getattr(args, 'wall_deep_wobble_spacing', 0.2)
-    WALL_DEEP_WOBBLE_CORNER_POWER_DROP = max(0.0, min(100.0, 100.0 - getattr(args, 'wall_deep_wobble_corner_power_drop', 50.0))) / 100.0
-    WALL_DEEP_WOBBLE_CORNER_DISTANCE   = max(0.0, getattr(args, 'wall_deep_wobble_corner_distance', 1.5))
-    WALL_DEEP_WOBBLE_OVERSHOOT         = getattr(args, 'wall_deep_wobble_overshoot', 0.0)
-    
-    WALL_SEAM_WOBBLE_SPEED         = getattr(args, 'wall_seam_wobble_speed', 20.0)
-    WALL_SEAM_WOBBLE_POWER_PLUS    = getattr(args, 'wall_seam_wobble_power_plus', 0.2)
-    WALL_SEAM_WOBBLE_POWER_MINUS   = getattr(args, 'wall_seam_wobble_power_minus', 0.2)
-    WALL_SEAM_WOBBLE_OVERLAP       = getattr(args, 'wall_seam_wobble_overlap', 1)
-    WALL_SEAM_WOBBLE_SPACING       = getattr(args, 'wall_seam_wobble_spacing', 0.2)
-    WALL_SEAM_WOBBLE_CORNER_POWER_DROP = max(0.0, min(100.0, 100.0 - getattr(args, 'wall_seam_wobble_corner_power_drop', 50.0))) / 100.0
-    WALL_SEAM_WOBBLE_CORNER_DISTANCE   = max(0.0, getattr(args, 'wall_seam_wobble_corner_distance', 1.5))
-    
-    WALL_OVERSHOOT            = args.wall_overshoot
-    WALL_WOBBLE_PROJECTION_FACTOR = getattr(args, 'wall_wobble_projection_factor', 1.0)
-    WALL_WOBBLE_PULL_ONLY = getattr(args, 'wall_wobble_pull_only', False)
-    WALL_WOBBLE_PULL_CONTINUOUS = getattr(args, 'wall_wobble_pull_continuous', False)
-    WALL_CORNER_POWER_DROP    = max(0.0, min(100.0, 100.0 - args.wall_corner_power_drop)) / 100.0
-    WALL_CORNER_DISTANCE      = max(0.0, args.wall_corner_distance)
-    
-    WALL_OFFSET_LEVEL = args.wall_offset_level
-    if WALL_OFFSET_LEVEL == 1:
-        WALL_Z_OFFSET = 5.8
-        WALL_X_PLUS_OFFSET = 11.5
-        WALL_X_MINUS_OFFSET = -12.6
-    elif WALL_OFFSET_LEVEL == 2:
-        WALL_Z_OFFSET = 10.0
-        WALL_X_PLUS_OFFSET = 21.2
-        WALL_X_MINUS_OFFSET = -23.8
-    elif WALL_OFFSET_LEVEL == 3:
-        WALL_Z_OFFSET = 15.0
-        WALL_X_PLUS_OFFSET = 31.9
-        WALL_X_MINUS_OFFSET = -35.7
-    elif WALL_OFFSET_LEVEL == 4:
-        WALL_Z_OFFSET = 20.0
-        WALL_X_PLUS_OFFSET = 42.5
-        WALL_X_MINUS_OFFSET = -47.6
-    else:
-        WALL_Z_OFFSET = 2.8
-        WALL_X_PLUS_OFFSET = 5.0
-        WALL_X_MINUS_OFFSET = -5.5
-
-    if args.wall_x_plus_offset is not None:
-        WALL_X_PLUS_OFFSET = args.wall_x_plus_offset
-    if args.wall_x_minus_offset is not None:
-        WALL_X_MINUS_OFFSET = args.wall_x_minus_offset
-    if args.wall_z_offset is not None:
-        WALL_Z_OFFSET = args.wall_z_offset
-
-    SWEEP_FEATURE   = args.sweep_feature
-    SWEEP_START_Z   = args.sweep_start_z
-    SWEEP_END_Z     = args.sweep_end_z
-    SWEEP_START_VAL = args.sweep_start_val
-    SWEEP_END_VAL   = args.sweep_end_val
-    
-    ENABLE_PURGE    = getattr(args, 'enable_purge', False)
-    PURGE_X         = getattr(args, 'purge_x', 5.0)
-    PURGE_Y         = getattr(args, 'purge_y', 5.0)
-
-    if os.path.exists(args.gcode_file):
-        if args.bricklayer:
-            try:
-                import orcaslicer_bricklayer_infill
-                print(f"Running Bricklayer on {args.gcode_file}...")
-                orcaslicer_bricklayer_infill.process_gcode(
-                    args.gcode_file, 
-                    args.bricklayer_extrusion, 
-                    args.bricklayer_retract_length, 
-                    args.bricklayer_retract_speed, 
-                    args.bricklayer_z_hop
-                )
-            except Exception as e:
-                print(f"Error running Bricklayer: {e}")
-                
-        if args.vibrate:
-            try:
-                import orcaslicer_vibrate_infill
-                print(f"Running Vibration on {args.gcode_file}...")
-                orcaslicer_vibrate_infill.process_gcode(
-                    args.gcode_file,
-                    args.vibrate_amplitude,
-                    args.vibrate_wavelength,
-                    args.vibrate_spacing,
-                    args.vibrate_fade,
-                    args.vibrate_resolution,
-                    args.vibrate_sync
-                )
-            except Exception as e:
-                print(f"Error running Vibration: {e}")
-                
-        process_gcode(args.gcode_file, args)
-    else:
-        print(f"Error: File {args.gcode_file} not found.")
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        try:
+            with open(log_file, "a", encoding="utf-8") as _lf:
+                _lf.write(f"ARGPARSE ERROR: {err_msg}\n")
+        except Exception:
+            pass
+        print(f"Argument parsing error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    try:
+        # Apply CLI arguments to globals
+        PREHEAT_ENABLED  = args.preheat
+        PREHEAT_POWER    = args.power
+        REF_SPEED        = args.ref_speed
+        MIN_LASER_POWER  = args.min_power
+        MIN_LAYER        = args.min_layer
+        TRAILING_ENABLED = args.trailing
+        TRAILING_RATIO   = args.trailing_ratio
+
+        SMOOTH_ENABLED   = args.smooth
+        GLOBAL_SMOOTH_LAYER = getattr(args, 'global_smooth_layer', None)
+        if GLOBAL_SMOOTH_LAYER is not None:
+            GLOBAL_SMOOTH_ENABLED = True
+        else:
+            GLOBAL_SMOOTH_ENABLED = getattr(args, 'global_smooth', False)
+        SMOOTH_LOCAL_ENABLED = getattr(args, 'smooth_local', False)
+        SMOOTH_POWER     = args.smooth_power
+        SMOOTH_SPEED     = args.smooth_speed
+        SMOOTH_SPACING   = args.smooth_spacing
+        SMOOTH_OVERSHOOT = args.smooth_overshoot
+        SMOOTH_OVERSHOOT_WITHOUT_LASER = args.smooth_overshoot_without_laser
+        SMOOTH_GROUP_SLOPES = getattr(args, 'smooth_group_slopes', False)
+        SMOOTH_Z_HOP     = max(0.2, args.smooth_z_hop)
+        SMOOTH_FAN_SPEED = args.smooth_fan_speed
+        SMOOTH_ANGLE     = args.smooth_angle
+        SMOOTH_ANGLE_STEP= args.smooth_angle_step
+        SMOOTH_PREHEAT   = args.smooth_preheat
+        SMOOTH_PASSES    = args.smooth_passes
+        SMOOTH_ALTERNATE = not args.smooth_no_alternate
+        
+        if args.smooth_smart_chunking:
+            SMOOTH_SMART_CHUNKING = True
+        if args.smooth_chunk_size is not None:
+            SMOOTH_CHUNK_SIZE = args.smooth_chunk_size
+        if args.smooth_chunk_no_full_pass:
+            SMOOTH_CHUNK_FULL_PASS = False
+        if args.smooth_chunk_full_pass_power is not None:
+            SMOOTH_CHUNK_FULL_PASS_POWER = args.smooth_chunk_full_pass_power
+        if args.smooth_boolean_res is not None:
+            SMOOTH_BOOLEAN_RES = args.smooth_boolean_res if args.smooth_boolean_res > 0 else 0.1
+
+        SMOOTH_MARGIN    = args.smooth_margin
+        SMOOTH_MIN_AREA  = args.smooth_min_area
+        SMOOTH_ENABLE_AREA_BOOST = getattr(args, 'smooth_enable_area_boost', False)
+        SMOOTH_AREA_BOOST = args.smooth_area_boost
+        SMOOTH_AREA_MAX   = args.smooth_area_max
+        SMOOTH_AREA_BASE  = args.smooth_area_base
+        SMOOTH_OVERSHOOT = args.smooth_overshoot
+        SMOOTH_OVERSHOOT_WITHOUT_LASER = args.smooth_overshoot_without_laser
+
+        if args.smooth_offset_x is not None:
+            SMOOTH_OFFSET_X = args.smooth_offset_x
+        if args.smooth_offset_y is not None:
+            SMOOTH_OFFSET_Y = args.smooth_offset_y
+        if args.smooth_offset_z is not None:
+            SMOOTH_OFFSET_Z = args.smooth_offset_z
+
+        ANNEAL_ENABLED   = args.anneal
+        ANNEAL_POWER     = args.anneal_power
+        ANNEAL_SPEED     = args.anneal_speed
+        ANNEAL_SPACING   = args.anneal_spacing
+        ANNEAL_OVERSHOOT = args.anneal_overshoot
+        ANNEAL_OVERSHOOT_WITHOUT_LASER = args.anneal_overshoot_without_laser
+        ANNEAL_ANGLE     = args.anneal_angle
+        ANNEAL_MARGIN    = args.anneal_margin
+        ANNEAL_MIN_AREA  = args.anneal_min_area
+
+                                        
+                        
+                                                                
+        WALL_SMOOTH_ENABLED = args.wall_smooth
+        WALL_SMOOTH_POWER_X_PLUS = args.wall_power_plus
+        WALL_SMOOTH_POWER_X_MINUS = args.wall_power_minus
+        WALL_SMOOTH_OVERHANG_POWER_X_PLUS = args.wall_overhang_power_plus
+        WALL_SMOOTH_OVERHANG_POWER_X_MINUS = args.wall_overhang_power_minus
+        
+        WALL_OVERHANG_POWER_MAX_PLUS = getattr(args, 'wall_overhang_power_max_plus', WALL_SMOOTH_OVERHANG_POWER_X_PLUS)
+        WALL_OVERHANG_POWER_MAX_MINUS = getattr(args, 'wall_overhang_power_max_minus', WALL_SMOOTH_OVERHANG_POWER_X_MINUS)
+        
+        WALL_MODE_PASS1          = getattr(args, 'wall_mode_pass1', 'standard')
+        WALL_MODE_PASS2          = getattr(args, 'wall_mode_pass2', 'none')
+        WALL_PASS2_SPEED         = args.wall_pass2_speed if getattr(args, 'wall_pass2_speed', None) is not None else WALL_SMOOTH_SPEED
+        WALL_PASS2_POWER_PLUS    = args.wall_pass2_power_plus if getattr(args, 'wall_pass2_power_plus', None) is not None else WALL_SMOOTH_POWER_X_PLUS
+        WALL_PASS2_POWER_MINUS   = args.wall_pass2_power_minus if getattr(args, 'wall_pass2_power_minus', None) is not None else WALL_SMOOTH_POWER_X_MINUS
+        WALL_PASS2_REVERSE_DIRECTION = getattr(args, 'wall_pass2_reverse', False)
+        WALL_PASS2_WOBBLE_REVERSE    = getattr(args, 'wall_pass2_wobble_reverse', False)
+
+        WALL_SMOOTH_SPEED = args.wall_speed
+        WALL_SMOOTH_PASSES = args.wall_passes
+        WALL_SMOOTH_FREQ = args.wall_freq
+        WALL_SMOOTH_MIN_LAYER = args.wall_min_layer
+        WALL_SMOOTH_ANGLE_TOL = args.wall_angle_tol
+        WALL_SMOOTH_TARGET = args.wall_target
+        WALL_SMOOTH_MIN_PATH_AREA = args.wall_min_path_area
+        
+        WALL_DEEP_MODE            = (WALL_MODE_PASS1 in ["deep", "wobble", "voxel", "voxel_wobble", "voxel_raycast", "voxel_v2", "voxel_recon"] or WALL_MODE_PASS2 in ["deep", "wobble", "voxel", "voxel_wobble", "voxel_raycast", "voxel_v2", "voxel_recon"])
+        WALL_LASER_THETA          = getattr(args, 'wall_laser_theta', 22.0)
+        WALL_VOXEL_SPACING        = getattr(args, 'wall_voxel_spacing', 0.2)
+        WALL_HANDOVER_OVERSHOOT   = getattr(args, 'wall_handover_overshoot', 1.0)
+        WALL_THERMAL_POWER_DROP   = max(0.0, min(100.0, 100.0 - getattr(args, 'wall_thermal_power_drop', 50.0))) / 100.0
+        WALL_Z_DIVISIONS          = args.wall_z_divisions
+        WALL_DEEP_OVERHANG_ANGLE  = args.wall_deep_overhang_angle
+        WALL_DEEP_DEVIATION       = args.wall_deep_deviation
+        WALL_DEEP_MIN_OVERHANG_LENGTH = args.wall_deep_min_overhang_length
+        WALL_DEEP_OVERLAP         = args.wall_deep_overlap
+        WALL_DEEP_SAFETY          = args.wall_deep_safety
+        WALL_MAX_LAYER_SAFETY     = args.wall_max_layer_safety
+        WALL_DEEP_IGNORE_OVERHANG_LENGTH = args.wall_overhang_ignore_length
+        WALL_DEEP_BOTTOM_UP       = args.wall_deep_bottom_up
+        WALL_DEEP_INTERLACE       = args.wall_deep_interlace
+        WALL_DEEP_DELAY_PASSES    = args.wall_deep_delay_passes
+        WALL_DEEP_FADE            = args.wall_deep_fade
+        WALL_DISABLE_OVERHANG     = args.wall_disable_overhang
+        WALL_RECOVERY_FLOW        = args.wall_recovery_flow
+        WALL_RETRACT              = args.wall_retract
+        WALL_MAX_RETRACT          = args.wall_max_retract
+        WALL_STANDBY_TEMP_DROP    = args.wall_standby_temp_drop
+        
+        WALL_WOBBLE_ENABLED       = args.wall_wobble
+        WALL_WOBBLE_SEAM_ONLY     = args.wall_wobble_seam_only
+        
+        WALL_DEEP_WOBBLE_LAYERS        = getattr(args, 'wall_deep_wobble_layers', 4)
+        WALL_DEEP_WOBBLE_OVERLAP       = getattr(args, 'wall_deep_wobble_overlap', 1)
+        WALL_DEEP_WOBBLE_SPACING       = getattr(args, 'wall_deep_wobble_spacing', 0.2)
+        WALL_DEEP_WOBBLE_CORNER_POWER_DROP = max(0.0, min(100.0, 100.0 - getattr(args, 'wall_deep_wobble_corner_power_drop', 50.0))) / 100.0
+        WALL_DEEP_WOBBLE_CORNER_DISTANCE   = max(0.0, getattr(args, 'wall_deep_wobble_corner_distance', 1.5))
+        WALL_DEEP_WOBBLE_OVERSHOOT         = getattr(args, 'wall_deep_wobble_overshoot', 0.0)
+        
+        WALL_SEAM_WOBBLE_SPEED         = getattr(args, 'wall_seam_wobble_speed', 20.0)
+        WALL_SEAM_WOBBLE_POWER_PLUS    = getattr(args, 'wall_seam_wobble_power_plus', 0.2)
+        WALL_SEAM_WOBBLE_POWER_MINUS   = getattr(args, 'wall_seam_wobble_power_minus', 0.2)
+        WALL_SEAM_WOBBLE_OVERLAP       = getattr(args, 'wall_seam_wobble_overlap', 1)
+        WALL_SEAM_WOBBLE_SPACING       = getattr(args, 'wall_seam_wobble_spacing', 0.2)
+        WALL_SEAM_WOBBLE_CORNER_POWER_DROP = max(0.0, min(100.0, 100.0 - getattr(args, 'wall_seam_wobble_corner_power_drop', 50.0))) / 100.0
+        WALL_SEAM_WOBBLE_CORNER_DISTANCE   = max(0.0, getattr(args, 'wall_seam_wobble_corner_distance', 1.5))
+        
+        WALL_OVERSHOOT            = args.wall_overshoot
+        scale_val = getattr(args, 'wall_wobble_x_scale', None)
+        if scale_val is None or scale_val == 1.0:
+            proj_val = getattr(args, 'wall_wobble_projection_factor', None)
+            if proj_val is not None and proj_val != 1.0:
+                scale_val = proj_val
+        if scale_val is None:
+            scale_val = 1.0
+        WALL_WOBBLE_X_SCALE       = scale_val
+        WALL_WOBBLE_PROJECTION_FACTOR = scale_val
+        WALL_MIN_SPEED            = getattr(args, 'wall_min_speed', 5.0)
+        WALL_MAX_SPEED            = getattr(args, 'wall_max_speed', 120.0)
+        WALL_WOBBLE_PULL_ONLY     = getattr(args, 'wall_wobble_pull_only', False)
+        WALL_WOBBLE_PULL_CONTINUOUS = getattr(args, 'wall_wobble_pull_continuous', False)
+        WALL_WOBBLE_ADAPTIVE_SLOPE = getattr(args, 'wall_wobble_adaptive_slope', False)
+        WALL_WOBBLE_SMART_CHUNKING = getattr(args, 'wall_wobble_smart_chunking', False)
+        WALL_CORNER_POWER_DROP    = max(0.0, min(100.0, 100.0 - args.wall_corner_power_drop)) / 100.0
+        WALL_CORNER_DISTANCE      = max(0.0, args.wall_corner_distance)
+        
+        WALL_OFFSET_LEVEL_RAW = getattr(args, 'wall_offset_level', "0")
+        FIXED_Z_BY_LEVEL = {
+            0: 2.0,
+            1: 5.0,
+            2: 10.0,
+            3: 15.0,
+            4: 20.0
+        }
+        
+        if str(WALL_OFFSET_LEVEL_RAW).lower() == 'custom':
+            WALL_OFFSET_LEVEL = 'custom'
+            if getattr(args, 'wall_z_offset', None) is not None:
+                WALL_Z_OFFSET = float(args.wall_z_offset)
+            else:
+                WALL_Z_OFFSET = None
+        else:
+            try:
+                lvl_int = int(WALL_OFFSET_LEVEL_RAW)
+                WALL_OFFSET_LEVEL = lvl_int
+                WALL_Z_OFFSET = FIXED_Z_BY_LEVEL.get(lvl_int, 2.0)
+            except ValueError:
+                WALL_OFFSET_LEVEL = str(WALL_OFFSET_LEVEL_RAW)
+                WALL_Z_OFFSET = 2.0
+
+        if getattr(args, 'wall_z_offset', None) is not None:
+            WALL_Z_OFFSET = float(args.wall_z_offset)
+
+        WALL_X_PLUS_OFFSET = getattr(args, 'wall_x_plus_offset', None)
+        WALL_X_MINUS_OFFSET = getattr(args, 'wall_x_minus_offset', None)
+
+        if WALL_SMOOTH_ENABLED:
+            if WALL_Z_OFFSET is None or WALL_Z_OFFSET <= 0:
+                raise ValueError(
+                    "\n" + "=" * 78 + "\n"
+                    "[CRITICAL SAFETY ERROR] Laser Z standoff offset must be strictly positive (Z > 0 mm)!\n"
+                    f"Received invalid Z offset: {WALL_Z_OFFSET}\n"
+                    "Zero or negative Z standoff values can cause toolhead collisions with the bed or part.\n"
+                    "Please calibrate your machine using the Offset Calibration web tool.\n"
+                    + "=" * 78 + "\n"
+                )
+
+            if WALL_X_PLUS_OFFSET is None or WALL_X_MINUS_OFFSET is None:
+                raise ValueError(
+                    "\n" + "=" * 78 + "\n"
+                    "[CRITICAL SAFETY ERROR] Laser offsets are not calibrated!\n"
+                    "For physical safety, no default offsets are shipped with this software.\n"
+                    "Running wall smoothing without calibrated offsets can cause toolhead crashes\n"
+                    "or misdirected laser beam firings.\n"
+                    "Please calibrate your machine using the Offset Calibration web tool\n"
+                    "('Laser 3D Suite -> Offset Calibration'), which automatically generates\n"
+                    "the exact calibrated --wall-z-offset, --wall-x-plus-offset, and\n"
+                    "--wall-x-minus-offset arguments for your slicer post-processing command.\n"
+                    + "=" * 78 + "\n"
+                )
+
+
+        
+        ENABLE_PURGE    = getattr(args, 'enable_purge', False)
+        PURGE_X         = getattr(args, 'purge_x', 5.0)
+        PURGE_Y         = getattr(args, 'purge_y', 5.0)
+
+        print("\n" + "!" * 76)
+        print("[EXPERIMENTAL NOTICE] Laser 3D Printer Advanced Post-Processor")
+        print("This software is 100% EXPERIMENTAL. Everything done with it is at your own risk.")
+        print("All wall smoothing modes can contain bugs. Specifically, Deep Mode and all")
+        print("Wobble modes (Deep Wobble & Voxel Wobble) still contain known bugs on complex shapes.")
+        print("MANDATORY: Always inspect generated toolpaths in the 3D visualizers before printing!")
+        print("!" * 76 + "\n")
+
+        if WALL_SMOOTH_ENABLED:
+            non_std = []
+            if WALL_MODE_PASS1 != "standard":
+                non_std.append(f"Pass 1: {WALL_MODE_PASS1}")
+            if WALL_MODE_PASS2 not in ["none", "standard"]:
+                non_std.append(f"Pass 2: {WALL_MODE_PASS2}")
+            if non_std:
+                modes_str = ", ".join(non_std)
+                print(f"[ALPHA WALL WARNING] Active experimental modes: {modes_str}")
+                print("Deep Mode & Wobble still have bugs with complicated shapes. Verify before printing!\n")
+
+        if os.path.exists(args.gcode_file):
+            if args.bricklayer:
+                try:
+                    import orcaslicer_bricklayer_infill
+                    print(f"Running Bricklayer on {args.gcode_file}...")
+                    orcaslicer_bricklayer_infill.process_gcode(
+                        args.gcode_file, 
+                        args.bricklayer_extrusion, 
+                        args.bricklayer_retract_length, 
+                        args.bricklayer_retract_speed, 
+                        args.bricklayer_z_hop
+                    )
+                except Exception as e:
+                    print(f"Error running Bricklayer: {e}")
+                    
+            if args.vibrate:
+                try:
+                    import orcaslicer_vibrate_infill
+                    print(f"Running Vibration on {args.gcode_file}...")
+                    orcaslicer_vibrate_infill.process_gcode(
+                        args.gcode_file,
+                        args.vibrate_amplitude,
+                        args.vibrate_wavelength,
+                        args.vibrate_spacing,
+                        args.vibrate_fade,
+                        args.vibrate_resolution,
+                        args.vibrate_sync
+                    )
+                except Exception as e:
+                    print(f"Error running Vibration: {e}")
+                    
+            process_gcode(args.gcode_file, args)
+            try:
+                with open(log_file, "a", encoding="utf-8") as _lf:
+                    _lf.write(f"Successfully processed: {args.gcode_file}\n")
+            except Exception:
+                pass
+        else:
+            print(f"Error: File {args.gcode_file} not found.")
+            try:
+                with open(log_file, "a", encoding="utf-8") as _lf:
+                    _lf.write(f"ERROR: File not found: {args.gcode_file}\n")
+            except Exception:
+                pass
+            sys.exit(1)
+
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        try:
+            with open(log_file, "a", encoding="utf-8") as _lf:
+                _lf.write(f"FATAL ERROR: {err_msg}\n")
+        except Exception:
+            pass
+        print(f"Post-process error: {e}\n{err_msg}", file=sys.stderr)
+        sys.exit(1)
+

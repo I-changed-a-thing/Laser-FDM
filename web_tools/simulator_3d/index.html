@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laser-Assisted 3D Print Visualizer — Real-Time Wall Smoothing</title>
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- Local Three.js & Postprocessing Vendors -->
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/GLTFLoader.js"></script>
+  <script src="vendor/OrbitControls.js"></script>
+  <script src="vendor/EffectComposer.js"></script>
+  <script src="vendor/RenderPass.js"></script>
+  <script src="vendor/ShaderPass.js"></script>
+  <script src="vendor/CopyShader.js"></script>
+  <script src="vendor/LuminosityHighPassShader.js"></script>
+  <script src="vendor/UnrealBloomPass.js"></script>
+  
+  <!-- Pre-bundled sample G-code & 3D CAD toolhead model for instant zero-config launch (including file:// protocol) -->
+  <script src="js/sample-gcode.js"></script>
+  <script src="js/toolhead-model.js"></script>
+<link rel="stylesheet" href="../shared/nav.css">
+<link rel="stylesheet" href="../shared/disclaimer.css">
+<script src="../shared/disclaimer.js"></script>
+<script src="../shared/calibration-config.js"></script>
+</head>
+<body>
+
+  <!-- Shared Top Navbar -->
+  <nav class="laser-suite-nav" style="position: absolute; width: 100%;">
+      <a href="../../index.html" class="laser-suite-brand">
+          <span class="laser-suite-icon"></span>
+          <span>Laser 3D Suite</span>
+      </a>
+      <div class="laser-suite-links">
+          <a href="../../index.html" class="laser-nav-btn">Suite Hub</a>
+          <a href="../configurator/index.html" class="laser-nav-btn">Configurator</a>
+          <a href="../gcode_visualizer/index.html" class="laser-nav-btn">G-Code Visualizer</a>
+          <a href="index.html" class="laser-nav-btn active">3D Simulator</a>
+          <a href="../calibration/index.html" class="laser-nav-btn">Offset Calibration</a>
+          <button class="laser-nav-disclaimer-btn" onclick="window.showLaserDisclaimer(true)">Disclaimer</button>
+      </div>
+  </nav>
+
+  <!-- 3D WebGL Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- UI Overlay -->
+  <div id="ui-container">
+    <!-- Top Header Bar -->
+    <header class="top-bar glass-panel">
+      <div class="brand-section">
+        <div class="laser-logo-icon">
+          <span class="laser-dot"></span>
+          <span class="laser-beam-icon"></span>
+        </div>
+        <div>
+          <h1 class="app-title">LASER SMOOTHING <span>3D VISUALIZER</span></h1>
+          <p class="app-subtitle" id="current-filename">Test cube.gcode • OrcaSlicer Advanced Post-Processor</p>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <!-- Laser Offset Mode Tag -->
+        <div class="status-badge" id="laser-mode-badge">
+          <span class="pulse-ring"></span>
+          <span id="laser-mode-text">Z-WOBBLE DEEP SMOOTHING</span>
+        </div>
+
+        <!-- Camera Preset Selector -->
+        <div class="camera-selector">
+          <button class="cam-btn active" data-cam="orbit" title="Free Orbit View (Rotate/Pan/Zoom)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+            Orbit
+          </button>
+          <button class="cam-btn" data-cam="follow" title="Follow Printhead (Chase Camera)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            Follow Head
+          </button>
+          <button class="cam-btn" data-cam="macro" title="Macro Close-Up on Wall / Top Laser Melt Zone">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            Macro Melt
+          </button>
+          <button class="cam-btn" data-cam="turntable" title="Cinematic Turntable Rotation">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>
+            Turntable
+          </button>
+        </div>
+
+        <!-- Macro Camera Distance Slider -->
+        <div class="macro-dist-control" id="macro-dist-control" title="Adjust Macro Camera Distance (Zoom)">
+          <span class="macro-dist-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></span>
+          <span class="macro-dist-title">Zoom:</span>
+          <input type="range" id="macro-dist-slider" min="0.4" max="2.5" step="0.05" value="1.0">
+          <span id="macro-dist-val" class="macro-dist-val">1.0x</span>
+        </div>
+
+        <!-- Macro Camera Pitch Angle Slider -->
+        <div class="macro-dist-control" id="macro-angle-control" title="Adjust Macro Camera Angle / Pitch (Tilt from grazing to top-down)">
+          <span class="macro-dist-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="vertical-align: middle;"><path d="M20 20H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1.7-.7l16 14A1 1 0 0 1 20 20zM5 7.4V18h10.6L5 7.4z"/></svg></span>
+          <span class="macro-dist-title">Angle:</span>
+          <input type="range" id="macro-angle-slider" min="5" max="75" step="1" value="20">
+          <span id="macro-angle-val" class="macro-dist-val">20°</span>
+        </div>
+
+        <!-- File Upload Button -->
+        <label class="btn-primary file-upload-btn" title="Open any custom G-code file">
+          <input type="file" id="gcode-file-input" accept=".gcode,.nc,.gc">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+          Load G-Code
+        </label>
+
+        <!-- Clean UI / Screen Recording Toggle -->
+        <button id="btn-clean-ui" class="icon-btn" title="Clean UI Mode for YouTube Video Recording (Hotkey: H)">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+        </button>
+
+        <!-- Laser Emitter Settings Button -->
+        <button id="btn-open-settings" class="btn-secondary settings-trigger-btn" title="Laser Emitter Calibration & Settings (3D Offsets)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="pointer-events: none;">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+          <span>Settings</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Middle UI Layer (Flexes dynamically between top bar and bottom deck) -->
+    <div class="middle-ui-layer">
+      <!-- Left Telemetry & Laser HUD -->
+      <aside class="left-hud glass-panel">
+      <div class="hud-header">
+        <span class="hud-label">LIVE TELEMETRY</span>
+        <span class="hud-status live">ONLINE</span>
+      </div>
+
+      <!-- Laser Firing Status Widget -->
+      <div class="laser-status-card" id="laser-hud-card">
+        <div class="laser-card-header">
+          <div class="laser-icon-glow"></div>
+          <div>
+            <div class="laser-card-title" id="hud-laser-name">LASER INACTIVE</div>
+            <div class="laser-card-subtitle" id="hud-laser-target">Beam Off</div>
+          </div>
+          <div class="laser-power-val" id="hud-laser-power">0%</div>
+        </div>
+        <div class="power-bar-container">
+          <div class="power-bar-fill" id="hud-power-bar"></div>
+        </div>
+      </div>
+
+      <!-- Coordinate Readouts -->
+      <div class="telemetry-grid">
+        <div class="tele-item">
+          <span class="tele-label">POS X</span>
+          <span class="tele-val" id="tele-x">0.00 <small>mm</small></span>
+        </div>
+        <div class="tele-item">
+          <span class="tele-label">POS Y</span>
+          <span class="tele-val" id="tele-y">0.00 <small>mm</small></span>
+        </div>
+        <div class="tele-item">
+          <span class="tele-label">POS Z</span>
+          <span class="tele-val" id="tele-z">0.00 <small>mm</small></span>
+        </div>
+        <div class="tele-item">
+          <span class="tele-label">FEEDRATE</span>
+          <span class="tele-val" id="tele-f">0 <small>mm/s</small></span>
+        </div>
+      </div>
+
+      <!-- Process Stage Info -->
+      <div class="process-info-card">
+        <div class="tele-item full-width">
+          <span class="tele-label">CURRENT FEATURE</span>
+          <span class="tele-val highlight" id="tele-feature">Initializing...</span>
+        </div>
+        <div class="tele-row">
+          <div class="tele-item">
+            <span class="tele-label">LAYER</span>
+            <span class="tele-val" id="tele-layer">0 / 34</span>
+          </div>
+          <div class="tele-item">
+            <span class="tele-label">HEIGHT</span>
+            <span class="tele-val" id="tele-layer-z">0.20 <small>mm</small></span>
+          </div>
+        </div>
+        <div class="tele-row">
+          <div class="tele-item">
+            <span class="tele-label">SMOOTH PASSES</span>
+            <span class="tele-val" id="tele-smooth-count">0</span>
+          </div>
+          <div class="tele-item">
+            <span class="tele-label">WALL STATE</span>
+            <span class="tele-val" id="tele-wall-state">Rough Layer</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Jump to Laser Passes -->
+      <div class="laser-jump-panel">
+        <div class="tele-label">LASER PASS NAVIGATION</div>
+        <div class="laser-jump-btns">
+          <button id="btn-prev-laser" class="mini-btn" title="Jump to previous Wall Smoothing laser pass">◀ Prev Laser Pass</button>
+          <button id="btn-next-laser" class="mini-btn highlight-btn" title="Jump to next Wall Smoothing laser pass">Next Laser Pass ▶</button>
+        </div>
+      </div>
+
+      <!-- Visual Toggles -->
+      <div class="toggles-panel">
+        <label class="toggle-item">
+          <input type="checkbox" id="toggle-toolhead" checked>
+          <span class="toggle-text">Show Toolhead Assembly</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" id="toggle-laser-beam" checked>
+          <span class="toggle-text">Glowing Laser Beam</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" id="toggle-bloom" checked>
+          <span class="toggle-text">Bloom Post-FX (Glow)</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" id="toggle-realistic-beam" checked>
+          <span class="toggle-text">Realistic Optical Beam (Waist)</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" id="toggle-travel-moves">
+          <span class="toggle-text">Show Rapid Travels</span>
+        </label>
+      </div>
+
+      <!-- Laser Diode Z-Height & Focus Alignment -->
+      <div class="diode-align-panel">
+        <div class="tele-label" style="margin-bottom:6px;">LASER DIODE ALIGNMENT & FOCUS</div>
+        <div class="diode-align-tip">Set diode heights & focal waist distance to calibrate real physical laser focus.</div>
+
+        <div class="diode-control-row">
+          <label class="diode-input-label" for="laser1-height">
+            <span class="diode-dot" style="background:#00f0ff;"></span>
+            Laser 1 (Right)
+          </label>
+          <div class="diode-input-group">
+            <button class="diode-nudge" data-laser="1" data-delta="-1" title="Nudge down 1mm">▼</button>
+            <input type="number" id="laser1-height" class="diode-number-input" value="27.8" min="5" max="80" step="0.1" title="Height in mm above nozzle tip">
+            <button class="diode-nudge" data-laser="1" data-delta="1" title="Nudge up 1mm">▲</button>
+            <span class="diode-unit">mm</span>
+          </div>
+        </div>
+
+        <div class="diode-control-row">
+          <label class="diode-input-label" for="laser2-height">
+            <span class="diode-dot" style="background:#ef4444;"></span>
+            Laser 2 (Left)
+          </label>
+          <div class="diode-input-group">
+            <button class="diode-nudge" data-laser="2" data-delta="-1" title="Nudge down 1mm">▼</button>
+            <input type="number" id="laser2-height" class="diode-number-input" value="29.0" min="5" max="80" step="0.1" title="Height in mm above nozzle tip">
+            <button class="diode-nudge" data-laser="2" data-delta="1" title="Nudge up 1mm">▲</button>
+            <span class="diode-unit">mm</span>
+          </div>
+        </div>
+
+        <div class="diode-control-row">
+          <span class="diode-input-label">
+            <span class="diode-dot" style="background:#eab308;"></span>
+            Beam Angle
+          </span>
+          <div class="diode-input-group">
+            <button class="diode-nudge" data-param="angle" data-delta="-0.5">▼</button>
+            <input type="number" id="laser-angle" class="diode-number-input" value="23.0" min="5" max="60" step="0.1" title="Physical angle of Laser 1 & 2 from horizontal">
+            <button class="diode-nudge" data-param="angle" data-delta="0.5">▲</button>
+            <span class="diode-unit">deg</span>
+          </div>
+        </div>
+
+        <div class="diode-control-row">
+          <span class="diode-input-label" title="Distance from lens to tightest optical waist (sharp focus)">
+            <span class="diode-dot" style="background:#a855f7;"></span>
+            Focal Waist (f)
+          </span>
+          <div class="diode-input-group">
+            <button class="diode-nudge" data-param="focal" data-delta="-1">▼</button>
+            <input type="number" id="laser-focal-dist" class="diode-number-input" value="100.0" min="40" max="150" step="0.5" title="Calibrated focal distance in mm">
+            <button class="diode-nudge" data-param="focal" data-delta="1">▲</button>
+            <span class="diode-unit">mm</span>
+          </div>
+        </div>
+
+        <button id="btn-open-settings-hud" class="btn-secondary settings-trigger-btn" style="width: 100%; margin-top: 10px; font-size: 11px; justify-content: center; gap: 6px; padding: 6px 10px;">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="pointer-events: none;"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+          <span>All Diode 3D Offsets & Settings</span>
+        </button>
+      </div>
+
+      <!-- Laser Energy Fluence Heatmap Panel -->
+      <div class="heatmap-panel">
+        <div class="tele-label" style="margin-bottom:6px; color: #f59e0b;">LASER ENERGY HEATMAP (FLUENCE)</div>
+        <div class="diode-align-tip">Calculates exact laser energy dose (J/mm²) received across the model, accounting for printer acceleration and Gaussian beam profile.</div>
+
+        <label class="toggle-item" style="margin-top: 6px; margin-bottom: 8px;">
+          <input type="checkbox" id="toggle-energy-heatmap">
+          <span class="toggle-text" style="font-weight: 600; color: #f59e0b;">Enable Energy Heatmap</span>
+        </label>
+
+        <div class="diode-control-row">
+          <label class="diode-input-label" for="heatmap-accel" title="Printer printhead acceleration limit">
+            <span class="diode-dot" style="background:#f59e0b;"></span>
+            Printer Accel
+          </label>
+          <div class="diode-input-group">
+            <input type="number" id="heatmap-accel" class="diode-number-input" value="5000" min="500" max="25000" step="500">
+            <span class="diode-unit">mm/s²</span>
+          </div>
+        </div>
+
+        <div class="diode-control-row">
+          <label class="diode-input-label" for="heatmap-waist" title="Focal beam waist radius w0">
+            <span class="diode-dot" style="background:#00f0ff;"></span>
+            Beam Waist (w₀)
+          </label>
+          <div class="diode-input-group">
+            <input type="number" id="heatmap-waist" class="diode-number-input" value="0.35" min="0.10" max="1.50" step="0.05">
+            <span class="diode-unit">mm</span>
+          </div>
+        </div>
+
+        <div class="diode-control-row">
+          <label class="diode-input-label" for="heatmap-power-watts" title="Laser diode optical power rating">
+            <span class="diode-dot" style="background:#ef4444;"></span>
+            Laser Power
+          </label>
+          <div class="diode-input-group">
+            <input type="number" id="heatmap-power-watts" class="diode-number-input" value="10" min="1" max="50" step="1">
+            <span class="diode-unit">W</span>
+          </div>
+        </div>
+
+        <button id="btn-recalc-heatmap" class="btn-secondary" style="width: 100%; margin-top: 8px; font-size: 11px; justify-content: center; gap: 6px; padding: 6px 10px; color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+          <span>Recalculate Heatmap</span>
+        </button>
+      </div>
+
+      <!-- Manual Jog & Laser Calibration Mode -->
+      <div class="manual-jog-panel" id="manual-jog-panel">
+        <div class="jog-header">
+          <div class="tele-label">MANUAL JOG & CALIBRATION</div>
+          <span class="jog-status-badge" id="jog-mode-status">SIM TRACK</span>
+        </div>
+        <div class="diode-align-tip">Pause simulation to jog the printhead freely and fire lasers to calibrate X/Y/Z distance to wall.</div>
+
+        <!-- Step Size Selector -->
+        <div class="jog-step-row">
+          <span class="jog-label">Step:</span>
+          <div class="jog-step-chips">
+            <button class="jog-step-chip" data-step="0.1">0.1</button>
+            <button class="jog-step-chip active" data-step="1.0">1mm</button>
+            <button class="jog-step-chip" data-step="10.0">10mm</button>
+            <button class="jog-step-chip" data-step="50.0">50mm</button>
+          </div>
+        </div>
+
+        <!-- Jog D-Pad & Controls -->
+        <div class="jog-controls-layout">
+          <!-- XY Jog Pad -->
+          <div class="jog-dpad">
+            <button class="jog-btn jog-y-plus" data-axis="Y" data-dir="1" title="Jog Y+ (Back)">▲ Y+</button>
+            <div class="jog-mid-row">
+              <button class="jog-btn jog-x-minus" data-axis="X" data-dir="-1" title="Jog X- (Left)">◀ X-</button>
+              <button class="jog-btn jog-center-btn" id="btn-jog-reset" title="Reset to Simulation Position">↺</button>
+              <button class="jog-btn jog-x-plus" data-axis="X" data-dir="1" title="Jog X+ (Right)">X+ ▶</button>
+            </div>
+            <button class="jog-btn jog-y-minus" data-axis="Y" data-dir="-1" title="Jog Y- (Front)">▼ Y-</button>
+          </div>
+
+          <!-- Z Jog Axis -->
+          <div class="jog-z-axis">
+            <button class="jog-btn jog-z-plus" data-axis="Z" data-dir="1" title="Jog Z+ (Up)">▲ Z+</button>
+            <div class="jog-z-label">Z AXIS</div>
+            <button class="jog-btn jog-z-minus" data-axis="Z" data-dir="-1" title="Jog Z- (Down)">▼ Z-</button>
+          </div>
+        </div>
+
+        <!-- Live Coordinate Numeric Inputs -->
+        <div class="jog-coords-row">
+          <div class="jog-coord-input">
+            <span>X:</span>
+            <input type="number" id="jog-pos-x" step="0.1" value="0.0">
+          </div>
+          <div class="jog-coord-input">
+            <span>Y:</span>
+            <input type="number" id="jog-pos-y" step="0.1" value="0.0">
+          </div>
+          <div class="jog-coord-input">
+            <span>Z:</span>
+            <input type="number" id="jog-pos-z" step="0.1" value="0.0">
+          </div>
+        </div>
+
+        <!-- Manual Laser Firing Toggles -->
+        <div class="jog-laser-section">
+          <div class="jog-label" style="margin-bottom:4px;">MANUAL LASER FIRING:</div>
+          <div class="jog-laser-buttons">
+            <button class="jog-laser-btn" data-laser="laser_pwm1" title="Toggle Laser 1 (Right Wall Laser)">
+              <span class="diode-dot" style="background:#00f0ff;"></span>
+              Laser 1
+            </button>
+            <button class="jog-laser-btn" data-laser="laser_pwm2" title="Toggle Laser 2 (Left Wall Laser)">
+              <span class="diode-dot" style="background:#ef4444;"></span>
+              Laser 2
+            </button>
+            <button class="jog-laser-btn" data-laser="laser_pwm3" title="Toggle Laser 3 (Top Surface Laser)">
+              <span class="diode-dot" style="background:#a855f7;"></span>
+              Laser 3
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Optical Measurement Readout -->
+        <div class="jog-readout-card">
+          <div class="jog-readout-item">
+            <span class="jog-readout-label">Dist to Wall:</span>
+            <span class="jog-readout-val" id="jog-wall-dist">-- mm</span>
+          </div>
+          <div class="jog-readout-item">
+            <span class="jog-readout-label">Focus State:</span>
+            <span class="jog-readout-val" id="jog-focus-status">Standby</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Legend Overlay (Top Right) -->
+    <div class="legend-panel glass-panel">
+      <div class="legend-title">RENDER COLOR KEY</div>
+      <div class="legend-grid">
+        <div class="legend-item"><span class="color-dot outer-wall"></span> Outer Wall (Rough)</div>
+        <div class="legend-item"><span class="color-dot smoothed-wall"></span> Laser Smoothed Wall</div>
+        <div class="legend-item"><span class="color-dot inner-wall"></span> Inner Wall</div>
+        <div class="legend-item"><span class="color-dot sparse-infill"></span> Sparse Infill</div>
+        <div class="legend-item"><span class="color-dot solid-infill"></span> Solid Infill</div>
+        <div class="legend-item"><span class="color-dot top-surface"></span> Top Surface</div>
+        <div class="legend-item"><span class="color-dot laser-glow"></span> 450nm Laser Beam & Melt</div>
+      </div>
+    </div>
+
+    <!-- Floating Heatmap Legend Overlay -->
+    <div id="heatmap-legend" class="heatmap-legend-container" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11px; font-weight: 700; color: #f59e0b; font-family: var(--font-mono); letter-spacing: 0.5px;">LASER ENERGY DOSE MAP</span>
+        <span id="heatmap-stat-joules" class="heatmap-stat-val" style="font-size: 10px;">0.0 J Total</span>
+      </div>
+      <div class="heatmap-legend-bar"></div>
+      <div class="heatmap-legend-labels">
+        <span>0 J/mm² (Cold)</span>
+        <span id="heatmap-label-mid">-- J/mm²</span>
+        <span id="heatmap-label-max" style="color: #ff3366; font-weight: 700;">-- J/mm² (Peak)</span>
+      </div>
+      <div class="heatmap-stats-row">
+        <span>Avg Dose: <strong id="heatmap-stat-avg" class="heatmap-stat-val">-- J/mm²</strong></span>
+        <span>Peak: <strong id="heatmap-stat-peak" class="heatmap-stat-val">-- J/mm²</strong></span>
+      </div>
+    </div>
+  </div> <!-- /middle-ui-layer -->
+
+    <!-- Bottom Playback Deck & Timeline Controls -->
+    <footer class="bottom-deck glass-panel">
+      <!-- Scrubbing Timeline -->
+      <div class="timeline-container">
+        <div class="time-display" id="time-current">00:00</div>
+        <div class="scrubber-wrapper">
+          <input type="range" id="timeline-slider" min="0" max="1000" value="0" step="1">
+          <!-- Markers for Laser Smoothing Passes -->
+          <div id="laser-markers-container" class="laser-markers-track"></div>
+        </div>
+        <div class="time-display" id="time-total">00:00</div>
+      </div>
+
+      <!-- Controls Row -->
+      <div class="controls-row">
+        <!-- Left: Layer Slider & Navigation -->
+        <div class="layer-control-group">
+          <button id="btn-prev-layer" class="icon-btn" title="Previous Layer (Down Arrow)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
+          </button>
+          <div class="layer-slider-wrapper">
+            <span class="control-label">Layer: <b id="layer-slider-val">All</b></span>
+            <input type="range" id="layer-slider" min="0" max="34" value="34">
+          </div>
+          <button id="btn-next-layer" class="icon-btn" title="Next Layer (Up Arrow)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+          </button>
+        </div>
+
+        <!-- Center: Main Transport Controls -->
+        <div class="transport-group">
+          <button id="btn-step-back" class="transport-btn" title="Step Back 1 Move (Left Arrow)">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+          </button>
+          <button id="btn-play-pause" class="play-btn" title="Play / Pause (Spacebar)">
+            <svg id="icon-play" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="icon-pause" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <button id="btn-step-fwd" class="transport-btn" title="Step Forward 1 Move (Right Arrow)">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+          </button>
+        </div>
+
+        <!-- Right: Speed Selector & Reset -->
+        <div class="speed-group">
+          <span class="control-label">Speed:</span>
+          <div class="speed-chips">
+            <button class="speed-chip" data-speed="0.1" title="0.1x Slow Motion (Laser Focus)">0.1x</button>
+            <button class="speed-chip" data-speed="0.5">0.5x</button>
+            <button class="speed-chip active" data-speed="1.0">1x</button>
+            <button class="speed-chip" data-speed="2.0">2x</button>
+            <button class="speed-chip" data-speed="5.0">5x</button>
+            <button class="speed-chip" data-speed="10.0">10x</button>
+            <button class="speed-chip" data-speed="50.0" title="Max Speed Scrub">Max</button>
+          </div>
+          <button id="btn-reset" class="icon-btn" title="Restart to Beginning">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Screen Recording Floating Watermark / Unhide helper when UI is hidden -->
+  <div id="clean-ui-helper" class="clean-ui-watermark" style="display: none;">
+    <span>PRESS <b>H</b> TO RESTORE CONTROLS</span>
+  </div>
+
+  <!-- Welcome / File Chooser Modal on Start -->
+  <div id="start-modal" class="start-modal-overlay">
+    <div class="start-modal-card glass-panel">
+      <button id="btn-close-start-modal" class="start-modal-close-btn" title="Close (Esc)">✕</button>
+      <div class="modal-laser-icon">
+        <span class="laser-dot"></span>
+      </div>
+      <h2 class="modal-title">LASER WALL SMOOTHING <span>VISUALIZER</span></h2>
+      <p class="modal-subtitle">3D Real-Time G-Code Simulator with Fixed-Angle Laser Kinematics & Surface Glazing</p>
+      
+      <div class="modal-dropzone" id="modal-dropzone">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor" class="drop-icon"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+        <p><b>Drag & Drop G-Code File Here</b></p>
+        <span>Supports OrcaSlicer, Bambu Studio, PrusaSlicer (.gcode, .nc)</span>
+      </div>
+
+      <div class="modal-actions">
+        <label class="btn-primary modal-upload-btn">
+          <input type="file" id="modal-file-input" accept=".gcode,.nc,.gc">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+          Browse Custom G-Code
+        </label>
+        
+        <button id="btn-load-sample" class="btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Load Sample (Test Cube)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay" style="display: none;">
+    <div class="loader-content">
+      <div class="laser-spinner"></div>
+      <h2 id="loading-title">Compiling G-Code Toolpaths...</h2>
+      <p id="loading-desc">Calculating Wall Smoothing passes, wobble kinematics, and laser beam trajectory.</p>
+    </div>
+  </div>
+
+  <!-- Settings Modal for Laser Emitters & Calibration -->
+  <div id="settings-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card settings-modal-card glass-panel">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="var(--laser-cyan)"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+          <h2 class="modal-title">LASER EMITTER & OPTICS SETTINGS</h2>
+        </div>
+        <button id="btn-close-settings" class="modal-close-btn" title="Close Settings (Esc)">✕</button>
+      </div>
+
+      <div class="settings-modal-body">
+        <p class="settings-desc">Fine-tune the exact 3D coordinates (X, Y, Z in mm relative to nozzle tip) for all three laser diode emitters. All values are automatically saved in browser storage and persist across reloads.</p>
+
+        <div style="margin-bottom: 1.25rem; padding: 0.85rem 1.1rem; border-radius: 8px; background: rgba(0, 240, 255, 0.07); border: 1px solid rgba(0, 240, 255, 0.25); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="var(--laser-cyan)"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            <div>
+              <strong style="color: #fff; font-size: 0.88rem;">Need to calibrate physical diode offsets?</strong>
+              <div style="font-size: 0.78rem; color: #94a3b8;">Perform 10mm cube paper touch-off & generate exact Klipper test macros.</div>
+            </div>
+          </div>
+          <a href="../calibration/index.html" class="btn-primary" style="padding: 0.4rem 0.85rem; font-size: 0.8rem; text-decoration: none; white-space: nowrap;">Open Offset Calibration ↗</a>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Laser 1 (Right) Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="diode-dot" style="background:#00f0ff;"></span>
+              <span class="settings-card-title">Laser 1 (Right Diode)</span>
+            </div>
+            <div class="settings-coords-grid">
+              <div class="setting-field">
+                <label for="set-l1-x">X Offset (mm)</label>
+                <input type="number" id="set-l1-x" step="0.1" value="68.45">
+              </div>
+              <div class="setting-field">
+                <label for="set-l1-y">Y Height (mm)</label>
+                <input type="number" id="set-l1-y" step="0.1" value="27.8">
+              </div>
+              <div class="setting-field">
+                <label for="set-l1-z">Z Offset (mm)</label>
+                <input type="number" id="set-l1-z" step="0.1" value="-0.18">
+              </div>
+            </div>
+          </div>
+
+          <!-- Laser 2 (Left) Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="diode-dot" style="background:#ef4444;"></span>
+              <span class="settings-card-title">Laser 2 (Left Diode)</span>
+            </div>
+            <div class="settings-coords-grid">
+              <div class="setting-field">
+                <label for="set-l2-x">X Offset (mm)</label>
+                <input type="number" id="set-l2-x" step="0.1" value="-68.45">
+              </div>
+              <div class="setting-field">
+                <label for="set-l2-y">Y Height (mm)</label>
+                <input type="number" id="set-l2-y" step="0.1" value="29.0">
+              </div>
+              <div class="setting-field">
+                <label for="set-l2-z">Z Offset (mm)</label>
+                <input type="number" id="set-l2-z" step="0.1" value="-0.18">
+              </div>
+            </div>
+          </div>
+
+          <!-- Laser 3 (Top Surface) Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="diode-dot" style="background:#a855f7;"></span>
+              <span class="settings-card-title">Laser 3 (Top Surface Diode)</span>
+            </div>
+            <div class="settings-coords-grid">
+              <div class="setting-field">
+                <label for="set-l3-x">X Offset (mm)</label>
+                <input type="number" id="set-l3-x" step="0.1" value="-34.08">
+              </div>
+              <div class="setting-field">
+                <label for="set-l3-y">Y Height (mm)</label>
+                <input type="number" id="set-l3-y" step="0.1" value="87.52">
+              </div>
+              <div class="setting-field">
+                <label for="set-l3-z">Z Offset (mm)</label>
+                <input type="number" id="set-l3-z" step="0.1" value="72.80">
+              </div>
+            </div>
+          </div>
+
+          <!-- Optics & Beam Parameters Card -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="diode-dot" style="background:#eab308;"></span>
+              <span class="settings-card-title">Optical Beam & Focus</span>
+            </div>
+            <div class="settings-coords-grid">
+              <div class="setting-field">
+                <label for="set-beam-angle">Beam Angle (°)</label>
+                <input type="number" id="set-beam-angle" min="5" max="60" step="0.1" value="23.0">
+              </div>
+              <div class="setting-field">
+                <label for="set-focal-dist">Focal Waist f (mm)</label>
+                <input type="number" id="set-focal-dist" min="40" max="150" step="0.5" value="100.0">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-footer">
+          <button id="btn-reset-defaults" class="btn-secondary" title="Restore factory default coordinates">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+            Reset Defaults
+          </button>
+          <div class="settings-save-actions">
+            <span id="settings-save-status" class="settings-save-badge">✓ Saved to Storage</span>
+            <button id="btn-save-settings" class="btn-primary">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+              Save & Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/gcode-parser.js"></script>
+  <script src="js/scene-manager.js"></script>
+  <script src="js/toolhead.js"></script>
+  <script src="js/laser-fx.js"></script>
+  <script src="js/laser-heatmap.js"></script>
+  <script src="js/wall-renderer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

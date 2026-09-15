@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laser Offset Calibration ? Laser 3D Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="../shared/disclaimer.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="../shared/disclaimer.js"></script>
+    <script src="../shared/calibration-config.js"></script>
+</head>
+<body>
+
+    <!-- Shared Top Navbar -->
+    <nav class="laser-suite-nav">
+        <a href="../../index.html" class="laser-suite-brand">
+            <span class="laser-suite-icon"></span>
+            <span>Laser 3D Suite</span>
+        </a>
+        <div class="laser-suite-links">
+            <a href="../../index.html" class="laser-nav-btn">Suite Hub</a>
+            <a href="../configurator/index.html" class="laser-nav-btn">Configurator</a>
+            <a href="../gcode_visualizer/index.html" class="laser-nav-btn">G-Code Visualizer</a>
+            <a href="../simulator_3d/index.html" class="laser-nav-btn">3D Simulator</a>
+            <a href="index.html" class="laser-nav-btn active">Offset Calibration</a>
+            <button class="laser-nav-disclaimer-btn" onclick="window.showLaserDisclaimer(true)">Disclaimer</button>
+        </div>
+    </nav>
+
+    <div class="cal-container">
+        <header class="cal-header">
+            <h1>Laser Diode Offset Calibration</h1>
+            <h1>Laser Wall Offset Calibration</h1>
+            <p>Mounting tolerances can slightly change the true angle of the lasers, which is why we must calibrate them for every machine individually and per laser. Higher offsets might be better for bigger parts to get larger chunk sizes working, though it results in a more defocused beam.</p>
+        </header>
+
+        <!-- Dynamic Status Banner -->
+        <div id="status-banner" class="status-banner uncalibrated">
+            <div class="status-info">
+                <span id="status-badge" class="status-badge uncalibrated">Uncalibrated</span>
+                <span id="status-text" class="status-text">No default offsets are shipped for safety reasons. Please calibrate the 5 fixed Z standoff heights below.</span>
+            </div>
+            <div id="status-actions">
+                <button id="btn-quick-export" class="btn btn-secondary" style="display:none;" onclick="window.LaserCalibration.exportJSON()">Download Config File</button>
+            </div>
+        </div>
+
+        <div class="cal-grid">
+            <!-- Left Column: Calibration Table & Visual Showcase -->
+            <div>
+                <!-- Offset Table Card -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <h3 class="card-title">Laser Calibration Table</h3>
+                    <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 16px;">
+                        Find your X offsets (<span style="color:var(--laser1); font-weight:600;">Laser 1</span> and <span style="color:var(--laser2); font-weight:600;">Laser 2</span>) across the 5 default Z heights, or set your own custom height.
+                    </p>
+
+                    <table class="offset-table">
+                        <thead>
+                            <tr>
+                                <th>Level</th>
+                                <th>Z Standoff</th>
+                                <th>Laser 1 X+ (mm)</th>
+                                <th>Laser 2 X- (mm)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="calibration-tbody">
+                            <!-- Injected by app.js (5 fixed levels) -->
+                        </tbody>
+                        <tbody id="custom-calibration-tbody" style="border-top: 2px solid rgba(0, 240, 255, 0.25);">
+                            <!-- Custom level row injected by app.js -->
+                        </tbody>
+                    </table>
+
+                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; line-height: 1.4;">
+                        <strong style="color: #cbd5e1;">Safety Note:</strong> Custom Z standoff must be strictly positive (<span style="color:#38bdf8;">Z &gt; 0 mm</span>). Zero or negative Z heights are rejected to prevent toolhead collisions.
+                    </div>
+
+                    <div class="action-bar">
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button id="btn-save-browser" class="btn btn-primary">Save to Browser</button>
+                            <button id="btn-export-file" class="btn btn-success">Hard-Save Config (JSON)</button>
+                            <label class="btn btn-secondary" style="margin:0; cursor:pointer;">
+                                Load Config File <input type="file" id="file-import-input" accept=".json" style="display:none;">
+                            </label>
+                        </div>
+                        <button id="btn-clear-cal" class="btn btn-danger-outline">Reset / Clear</button>
+                    </div>
+                </div>
+
+                <!-- Step-by-Step Visual Showcase Card -->
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <h3 class="card-title" style="margin-bottom: 2px;">Step-by-Step Visual Showcase</h3>
+                            <p style="font-size: 0.82rem; color: var(--text-muted); margin: 0;">Interactive cross-section showing nozzle, paper, 10mm cube, and laser alignment at each step.</p>
+                        </div>
+                        <!-- Diode Toggle -->
+                        <div class="showcase-diode-toggle">
+                            <button id="btn-showcase-laser1" class="showcase-toggle-btn active" title="Showcase Laser 1 (X+ Right Diode)">Laser 1 (X+)</button>
+                            <button id="btn-showcase-laser2" class="showcase-toggle-btn" title="Showcase Laser 2 (X- Left Diode)">Laser 2 (X-)</button>
+                        </div>
+                    </div>
+
+                    <!-- Step Selector Tabs (9 Steps) -->
+                    <div class="showcase-step-tabs">
+                        <button class="showcase-step-btn active" data-step="1">
+                            <span class="step-badge">1</span> Print &amp; Remove
+                        </button>
+                        <button class="showcase-step-btn" data-step="2">
+                            <span class="step-badge">2</span> Home Printer
+                        </button>
+                        <button class="showcase-step-btn" data-step="3">
+                            <span class="step-badge">3</span> Place Cube
+                        </button>
+                        <button class="showcase-step-btn" data-step="4">
+                            <span class="step-badge">4</span> Find Z Baseline
+                        </button>
+                        <button class="showcase-step-btn" data-step="5">
+                            <span class="step-badge">5</span> Align Edge
+                        </button>
+                        <button class="showcase-step-btn" data-step="6">
+                            <span class="step-badge">6</span> Select Laser
+                        </button>
+                        <button class="showcase-step-btn" data-step="7">
+                            <span class="step-badge">7</span> Move Z Up
+                        </button>
+                        <button class="showcase-step-btn" data-step="8">
+                            <span class="step-badge">8</span> Find Offset
+                        </button>
+                        <button class="showcase-step-btn" data-step="9">
+                            <span class="step-badge">9</span> Save Values
+                        </button>
+                    </div>
+
+                    <!-- Canvas -->
+                    <canvas id="beam-canvas" width="560" height="280"></canvas>
+
+                    <!-- Dynamic Step Explanation Card -->
+                    <div id="showcase-desc-box" style="margin-top: 12px; padding: 12px 14px; border-radius: 8px; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--card-border); font-size: 0.86rem; color: #e2e8f0; line-height: 1.5;">
+                        <!-- Injected dynamically by app.js -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: 9-Step Physical Alignment Guide & Workflow -->
+            <div>
+                <!-- 9-Step Physical Alignment Workflow Card -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                        <h3 class="card-title" style="margin-bottom:0;">Calibration Steps</h3>
+                        <a href="models/calibration_cube_10mm.stl" download class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.82rem; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                            Download 10mm Cube STL
+                        </a>
+                    </div>
+
+                    <div class="step-list">
+                        <!-- Step 1 -->
+                        <div class="step-item">
+                            <div class="step-num">1</div>
+                            <div class="step-content">
+                                <h4>Print &amp; Remove 10mm Cube</h4>
+                                <p>
+                                    Print the 10x10x10 mm cube. 
+                                    <strong>Once done, remove the cube from the bed!</strong> Do not home the printer while the cube is on the bed.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="step-item">
+                            <div class="step-num">2</div>
+                            <div class="step-content">
+                                <h4>Home Printer (Empty Bed)</h4>
+                                <p>
+                                    Use your printer's menu to home all axes while the bed is completely empty. This ensures the printer finds its zero safely.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="step-item">
+                            <div class="step-num">3</div>
+                            <div class="step-content">
+                                <h4>Place Cube Under Nozzle</h4>
+                                <p>
+                                    Move the toolhead up so you can safely place the 10mm cube back onto the bed, directly under the nozzle.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 4 -->
+                        <div class="step-item">
+                            <div class="step-num">4</div>
+                            <div class="step-content">
+                                <h4>Find Z Baseline</h4>
+                                <p>
+                                    Place a piece of paper on the cube. Use the printer's menu to slowly lower the nozzle until you feel light friction on the paper. 
+                                    Remove the paper. This is your Z baseline height.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 5 -->
+                        <div class="step-item">
+                            <div class="step-num">5</div>
+                            <div class="step-content">
+                                <h4>Align Nozzle to Cube Edge</h4>
+                                <p>
+                                    Move the toolhead using the printer menu until the nozzle tip is perfectly flush with the outer vertical edge of the cube.
+                                    This position is your X baseline.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 6 -->
+                        <div class="step-item">
+                            <div class="step-num">6</div>
+                            <div class="step-content">
+                                <h4>Select Laser &amp; Height</h4>
+                                <p>
+                                    Decide which laser to calibrate first: <strong>Laser 1 (Right)</strong> or <strong>Laser 2 (Left)</strong>. 
+                                    Choose a Z standoff height from the table (e.g., Level 2 at 10mm).
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 7 -->
+                        <div class="step-item">
+                            <div class="step-num">7</div>
+                            <div class="step-content">
+                                <h4>Move Z Up &amp; Turn on Laser</h4>
+                                <p>
+                                    Using the printer's menu, move the Z axis up by your chosen standoff height (e.g., move up 10mm).
+                                    Then, run your printer's laser test macro to turn on the laser at a safe, low power.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Step 8 -->
+                        <div class="step-item">
+                            <div class="step-num">8</div>
+                            <div class="step-content">
+                                <h4>Find the X Offset</h4>
+                                <p>
+                                    Move the toolhead sideways (along the X axis) until the laser spot hits the vertical side wall of the cube. 
+                                    You need to align it so that the exact <strong>center</strong> of the laser spot rests perfectly on the <strong>center of the top layer</strong> on that side wall, not the absolute top edge of the part.
+                                    Note down the distance you moved from your X baseline.
+                                </p>
+                                
+                                <div class="alignment-diagram" style="margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 12px; background: rgba(15, 23, 42, 0.5);">
+                                    <div style="display:flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                                        <button id="btn-good-align" class="btn btn-success" style="padding: 4px 10px; font-size: 0.8rem;">Show Good Alignment</button>
+                                        <button id="btn-bad-align" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">Show Bad Alignment</button>
+                                    </div>
+                                    <div style="position: relative; height: 140px; background: #0b1121; border-radius: 4px; overflow: hidden;">
+                                        
+                                        <!-- Cube side profile -->
+                                        <div style="position: absolute; bottom: 0; right: 50%; width: 100px; height: 70px; background: rgba(71, 85, 105, 0.8); border-right: 2px solid #94a3b8;">
+                                            <!-- Top layer separated visually -->
+                                            <div style="position: absolute; top: 0; left: 0; right: 0; height: 6px; background: #64748b; border-bottom: 1px dashed rgba(255,255,255,0.3);"></div>
+                                            <span style="position:absolute; bottom: 5px; right: 5px; font-size: 0.7rem; color: #cbd5e1;">10mm Cube Wall</span>
+                                        </div>
+                                        <div style="position: absolute; top: 73px; left: 0; right: 0; height: 1px; border-top: 1px dashed rgba(255,255,255,0.2);"></div>
+
+                                        <!-- Laser Beam (changes based on toggle) -->
+                                        <div id="laser-spot-demo" style="position: absolute; top: 63px; left: calc(50% - 6px); width: 12px; height: 20px; background: rgba(0, 240, 255, 0.8); box-shadow: 0 0 10px #00f0ff; border: 1px solid #fff; transition: top 0.3s ease;">
+                                            <!-- crosshair -->
+                                            <div style="position: absolute; top: 9px; left: -15px; right: -15px; height: 1.5px; background: rgba(255,255,255,0.8);"></div>
+                                            <div style="position: absolute; top: -5px; bottom: -5px; left: 5px; width: 1.5px; background: rgba(255,255,255,0.8);"></div>
+                                        </div>
+
+                                        <div style="position: absolute; top: 10px; left: 10px; right: 10px; color: #10b981; font-size: 0.85rem;" id="align-demo-text">
+                                            <strong style="color: #10b981;">Correct:</strong> The exact center of the laser spot perfectly aligns with the center of the top layer (the middle of the layer's thickness).
+                                        </div>
+                                    </div>
+                                    <script>
+                                        document.getElementById('btn-good-align').addEventListener('click', function() {
+                                            document.getElementById('laser-spot-demo').style.top = '63px'; // Top layer center is 3px from top edge (at 73px from top of container). Spot center is 10px down. 63+10 = 73px!
+                                            document.getElementById('align-demo-text').innerHTML = '<strong style="color: #10b981;">Correct:</strong> The exact center of the laser spot perfectly aligns with the center of the top layer (the middle of the layer\\'s thickness).';
+                                            this.className = 'btn btn-success';
+                                            document.getElementById('btn-bad-align').className = 'btn btn-secondary';
+                                        });
+                                        document.getElementById('btn-bad-align').addEventListener('click', function() {
+                                            document.getElementById('laser-spot-demo').style.top = '60px'; // Center is at 70px (absolute top edge of part)
+                                            document.getElementById('align-demo-text').innerHTML = '<strong style="color: #ef4444;">Incorrect:</strong> Do not align the spot center to the absolute top edge of the part. It must be centered on the top layer itself.';
+                                            this.className = 'btn btn-secondary';
+                                            document.getElementById('btn-bad-align').className = 'btn btn-danger';
+                                        });
+                                    </script>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <!-- Step 9 -->
+                        <div class="step-item">
+                            <div class="step-num">9</div>
+                            <div class="step-content">
+                                <h4>Save Your Values</h4>
+                                <p>
+                                    Enter the X distance into the table. 
+                                    Repeat this entire process for the other laser and for all the standoff heights you want to calibrate. 
+                                    Click <strong>Save to Browser</strong> and then <strong>Hard-Save Config (JSON)</strong>.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
