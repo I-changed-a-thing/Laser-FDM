@@ -10,12 +10,12 @@
 
 ## What This Printer Can Do
 
-This hybrid machine combines standard FDM 3D printing with strategically mounted laser diodes. By remelting and modifying the plastic dynamically during the print, it achieves features impossible on a standard printer:
+This modified Elegoo Neptune 4 uses laser diodes to remelting and modifying the plastic dynamically during the print, it achieves features impossible on a standard printer:
 
+* **+100% Z-Axis Strength Gain:** By pre-heating the previous layer milliseconds before new plastic is laid down (and through structural infill strategies), layer adhesion is dramatically 
 * **Glossy, Glass-like Top Surfaces:** The laser does a final glazing pass to melt away top layer extrusion lines.
 * **Invisible Z-Seams & Smooth Walls:** Side-mounted lasers remelt the outer perimeters, fusing layer lines together horizontally and vertically for injection-molded quality.
-* **Extreme Z-Axis Strength:** By pre-heating the previous layer milliseconds before new plastic is laid down (and through structural infill strategies), layer adhesion is dramatically increased.
-* **Virtual PCBs:** Capable of pyrolyzing carbon-loaded filament to create internal conductive traces.
+increased.
 
 Here is a glimpse of the data showing the structural strength improvements (comparing standard printing vs. laser-assisted modes):
 
