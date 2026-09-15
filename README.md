@@ -5,7 +5,7 @@
 > **All wall smoothing modes can contain software bugs.** Specifically, **Deep Mode** and **all Wobble modes (Deep Wobble & Voxel Wobble)** still contain known bugs with complicated geometries, fine features, sharp overhangs, and non-manifold meshes.  
 > High-power laser diodes introduce serious fire, permanent optical radiation (blindness), and toxic fume hazards. Never leave equipment running unattended, maintain proper ventilation, and always wear certified optical safety goggles.  
 > **MANDATORY: Always inspect generated G-code in the 3D Simulator or G-Code Visualizer before printing on physical hardware!**
-> $${\color{red}**Allways where laser safty glasses which are rated for the laser you use.**}$$
+# ⚠️Allways where laser safty glasses⚠️
 
 ---
 
