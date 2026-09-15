@@ -44,7 +44,7 @@ See the Laser FDM process in action!
 
 *Instructions for building your own Laser FDM printer are detailed in this open-source build guide video.*
 
-[![Opensource Laser FDM](https://img.youtube.com/vi/qHYnePu4Ysw/maxresdefault.jpg)](https://www.youtube.com/watch?v=qHYnePu4Ysw)
+[![Opensource Laser FDM](https://img.youtube.com/vi/TVKNi_Bk3_o/maxresdefault.jpg)](https://youtu.be/TVKNi_Bk3_o)
 
 ---
 
