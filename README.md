@@ -27,15 +27,14 @@ Here is a glimpse of the data showing the structural strength improvements (comp
 
 See the Laser FDM process in action! 
 
-### Testing Z Axis Strengths
-[![Testing Z Axis Strengths](https://img.youtube.com/vi/vpd5nh9Lj98/maxresdefault.jpg)](https://www.youtube.com/watch?v=vpd5nh9Lj98)
+### Testing Z Axis Strengths 
+[![Testing Z Axis Strengths](https://img.youtube.com/vi/Z4Z035srbKI/maxresdefault.jpg)](https://www.youtube.com/watch?v=Z4Z035srbKI)
 
-### Laser Smoothness vs Non Laser
-[![Laser Smoothness vs Non Laser](https://img.youtube.com/vi/Z4Z035srbKI/maxresdefault.jpg)](https://www.youtube.com/watch?v=Z4Z035srbKI)
+### Top Layer smoothing
+[![Laser Smoothness vs Non Laser](https://img.youtube.com/vi/vpd5nh9Lj98/maxresdefault.jpg)](https://www.youtube.com/watch?v=vpd5nh9Lj98)
 
-### First look at laser FDM printing
+### Wall smoothing
 [![First look at laser FDM printing](https://img.youtube.com/vi/qHYnePu4Ysw/maxresdefault.jpg)](https://www.youtube.com/watch?v=qHYnePu4Ysw)
-* **Full Open-Source Build Guide:** *Coming soon!* (This upcoming video will walk you through exactly how to build this printer yourself.)
 
 ---
 
