@@ -1,22 +1,24 @@
 # Laser FDM + Printer Suite
 
-> ⚠️ **CRITICAL SAFETY & EXPERIMENTAL DISCLAIMER**:  
-> This entire software project, hardware integration, and laser-assisted 3D printing pipeline are **100% EXPERIMENTAL** and provided strictly on an **AS-IS, AT-YOUR-OWN-RISK** basis.  
-> **All wall smoothing modes can contain software bugs.** Specifically, **Deep Mode** and **all Wobble modes (Deep Wobble & Voxel Wobble)** still contain known bugs with complicated geometries, fine features, sharp overhangs, and non-manifold meshes.  
-> High-power laser diodes introduce serious fire, permanent optical radiation (blindness), and toxic fume hazards. Never leave equipment running unattended, maintain proper ventilation, and always wear certified optical safety goggles.  
-> **MANDATORY: Always inspect generated G-code in the 3D Simulator or G-Code Visualizer before printing on physical hardware!**
-# ⚠️Allways where laser safty glasses⚠️
+> [!WARNING]
+> **CRITICAL SAFETY & EXPERIMENTAL DISCLAIMER**:
+> This entire software project, hardware integration, and laser-assisted 3D printing pipeline are **100% EXPERIMENTAL** and provided strictly on an **AS-IS, AT-YOUR-OWN-RISK** basis.
+> 
+> **All wall smoothing modes can contain software bugs.** Specifically, **Deep Mode** and **all Wobble modes (Deep Wobble & Voxel Wobble)** still contain known bugs with complicated geometries, fine features, sharp overhangs, and non-manifold meshes.<br/>
+> **Always inspect generated G-code in the 3D Simulator or G-Code Visualizer before printing on physical hardware!**
+> 
+> High-power laser diodes introduce serious fire, permanent optical radiation (blindness), and toxic fume hazards.<br/>
+> **Never leave equipment running unattended, maintain proper ventilation, and always wear certified optical safety goggles!**
 
 ---
 
 ## What This Printer Can Do
 
-This modified Elegoo Neptune 4 uses laser diodes to remelting and modifying the plastic dynamically during the print, it achieves features impossible on a standard printer:
+This modified Elegoo Neptune 4 uses laser diodes to remelt and modify the plastic dynamically during the print. It achieves features impossible on a standard printer:
 
-* **+100% Z-Axis Strength Gain:** By pre-heating the previous layer milliseconds before new plastic is laid down (and through structural infill strategies), layer adhesion is dramatically 
-* **Glossy, Glass-like Top Surfaces:** The laser does a final glazing pass to melt away top layer extrusion lines.
+* **+100% Z-Axis Strength Gain:** By pre-heating the previous layer milliseconds before new plastic is laid down (and through structural infill strategies), layer adhesion is dramatically increased
+* **Glossy, Glass-like Top Surfaces:** The laser does a final glazing pass to melt away top layer extrusion lines
 * **Invisible Z-Seams & Smooth Walls:** Side-mounted lasers remelt the outer perimeters, fusing layer lines together horizontally and vertically for injection-molded quality.
-increased.
 
 Here is a glimpse of the data showing the structural strength improvements (comparing standard printing vs. laser-assisted modes):
 
@@ -26,9 +28,9 @@ Here is a glimpse of the data showing the structural strength improvements (comp
 
 ## Video Showcases
 
-See the Laser FDM process in action! 
+See the Laser FDM process in action!
 
-### Testing Z Axis Strengths 
+### Testing Z Axis Strengths
 [![Testing Z Axis Strengths](https://img.youtube.com/vi/Z4Z035srbKI/maxresdefault.jpg)](https://www.youtube.com/watch?v=Z4Z035srbKI)
 
 ### Top Layer smoothing
@@ -38,7 +40,6 @@ See the Laser FDM process in action!
 [![First look at laser FDM printing](https://img.youtube.com/vi/qHYnePu4Ysw/maxresdefault.jpg)](https://www.youtube.com/watch?v=qHYnePu4Ysw)
 
 ---
-
 
 ## The Hardware Build
 
